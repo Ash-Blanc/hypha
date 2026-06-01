@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hypha · literature-based discovery</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #121821;
+    --panel-2: #18202b;
+    --border: #232d3b;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #5eead4;
+    --accent-2: #818cf8;
+    --a-node: #f0abfc;
+    --b-node: #fcd34d;
+    --c-node: #5eead4;
+    --danger: #fb7185;
+    --radius: 14px;
+    --shadow: 0 8px 30px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 75% -10%, #16203021, transparent),
+                radial-gradient(900px 500px at 0% 0%, #1b113021, transparent), var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 80px; }
+  header.hero { text-align: center; padding: 28px 0 18px; }
+  .logo { display:inline-flex; align-items:center; gap:12px; }
+  .spore {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--accent), var(--accent-2));
+    box-shadow: 0 0 24px #5eead488, inset 0 0 8px #00000055;
+  }
+  h1 { font-size: 2.0rem; margin: 0; letter-spacing: -0.02em; }
+  .tag { color: var(--muted); margin: 8px auto 0; max-width: 680px; font-size: 1.02rem; }
+  .pill { display:inline-block; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase;
+          color:var(--accent); border:1px solid var(--border); padding:3px 10px; border-radius:999px; margin-bottom:14px;}
+
+  .searchbar {
+    margin: 26px auto 8px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .searchbar input[type=text] {
+    flex: 1 1 320px; min-width: 220px; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--text); padding: 13px 15px; font-size: 1.02rem; border-radius: 10px; outline: none;
+  }
+  .searchbar input[type=text]:focus { border-color: var(--accent-2); }
+  button.go {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #06121a;
+    border: none; padding: 13px 22px; font-weight: 700; font-size: 1rem; border-radius: 10px; cursor: pointer;
+    transition: transform .08s ease;
+  }
+  button.go:hover { transform: translateY(-1px); }
+  button.go:disabled { opacity: .55; cursor: default; transform:none; }
+  .opts { display:flex; gap:16px; align-items:center; color:var(--muted); font-size:.86rem; }
+  .opts label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .examples { text-align:center; margin: 6px 0 0; color: var(--muted); font-size:.86rem; }
+  .chip {
+    display:inline-block; margin:6px 5px 0; padding:6px 12px; border:1px solid var(--border);
+    border-radius:999px; background:var(--panel-2); color:var(--text); cursor:pointer; font-size:.84rem;
+  }
+  .chip:hover { border-color: var(--accent); }
+
+  .status { text-align:center; color: var(--muted); min-height: 22px; margin-top: 16px; }
+  .meta-line { text-align:center; color: var(--muted); font-size:.85rem; margin: 4px 0 18px;}
+  .meta-line b { color: var(--text); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 22px; margin: 16px 0; box-shadow: var(--shadow);
+  }
+  .h-statement { font-size: 1.12rem; font-weight: 650; margin: 0 0 6px; }
+  .scores { display:flex; flex-wrap:wrap; gap: 8px; margin: 10px 0 14px; }
+  .badge { font-size:.74rem; padding:4px 9px; border-radius:8px; background: var(--panel-2);
+           border:1px solid var(--border); color: var(--muted); }
+  .badge b { color: var(--text); }
+  .badge.nov b { color: var(--accent); }
+  .badge.plaus b { color: var(--accent-2); }
+
+  .bridge { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin: 6px 0 14px; }
+  .node { padding:6px 12px; border-radius:10px; font-weight:600; font-size:.86rem; border:1px solid #ffffff14;}
+  .node.a { background: #f0abfc1f; color: var(--a-node); }
+  .node.c { background: #5eead41f; color: var(--c-node); }
+  .node.b { background: #fcd34d17; color: var(--b-node); font-weight:500; font-size:.8rem; }
+  .arrow { color: var(--muted); font-size: 1.1rem; }
+  .bset { display:flex; flex-wrap:wrap; gap:6px; }
+
+  .block { margin: 10px 0; }
+  .block .lbl { font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color: var(--muted); margin-bottom:3px; }
+  .block .val { color: var(--text); }
+  .cites { margin: 4px 0 0; padding-left: 18px; }
+  .cites li { color: var(--muted); font-size: .9rem; margin: 2px 0; }
+  .cites a { color: var(--accent); text-decoration: none; }
+  .cites a:hover { text-decoration: underline; }
+  .gen { font-size:.74rem; color:var(--muted); margin-top:10px; }
+
+  details.trace { margin-top: 24px; background: var(--panel); border:1px solid var(--border);
+                  border-radius: var(--radius); padding: 6px 18px; }
+  details.trace summary { cursor:pointer; padding: 12px 0; font-weight:600; color: var(--text); }
+  .tracestep { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.82rem;
+               color: var(--muted); padding: 4px 0; border-top: 1px dashed var(--border); }
+  .tracestep b { color: var(--accent); }
+  footer { text-align:center; color: var(--muted); font-size:.8rem; margin-top: 40px; }
+  footer a { color: var(--accent); text-decoration:none; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid #ffffff33;
+          border-top-color: var(--accent); border-radius:50%; animation: r .8s linear infinite; vertical-align:-2px; margin-right:8px;}
+  @keyframes r { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="pill">undiscovered public knowledge</div>
+      <div class="logo"><div class="spore"></div><h1>Hypha</h1></div>
+      <p class="tag">An agentic literature-based discovery engine. Give it a topic; it grows
+      connections through the scientific literature to surface novel, testable, cross-domain
+      hypotheses that no single paper has yet stated &mdash; following Swanson's A&ndash;B&ndash;C model.</p>
+    </header>
+
+    <div class="searchbar">
+      <input id="topic" type="text" placeholder="e.g. Raynaud disease, type 2 diabetes, Alzheimer disease…"
+             autocomplete="off" />
+      <div class="opts">
+        <label title="Use the bundled offline demo graph (no network)">
+          <input id="offline" type="checkbox" /> offline demo
+        </label>
+      </div>
+      <button class="go" id="go">Discover</button>
+    </div>
+
+    <div class="examples">
+      Try:
+      <span class="chip" data-off="1">Raynaud disease</span>
+      <span class="chip" data-off="1">Migraine</span>
+      <span class="chip">type 2 diabetes</span>
+      <span class="chip">Alzheimer disease</span>
+      <span class="chip">gut microbiome</span>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="meta-line" id="meta"></div>
+    <div id="results"></div>
+    <div id="tracebox"></div>
+
+    <footer>
+      Data: <a href="https://openalex.org" target="_blank" rel="noopener">OpenAlex</a> ·
+      hypotheses are machine-generated leads for human review, not established facts.
+    </footer>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => (s ?? "").toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function nodeChain(h) {
+  const bs = h.bridge.bridges.map(b => `<span class="node b">${esc(b.name)}</span>`).join("");
+  return `<div class="bridge">
+      <span class="node a">${esc(h.bridge.source.name)}</span>
+      <span class="arrow">→</span>
+      <span class="bset">${bs}</span>
+      <span class="arrow">→</span>
+      <span class="node c">${esc(h.bridge.target.name)}</span>
+    </div>`;
+}
+
+function cites(h) {
+  if (!h.supporting_works || !h.supporting_works.length) return "";
+  const items = h.supporting_works.map(w => {
+    const t = esc(w.title) + (w.year ? ` (${w.year})` : "");
+    return `<li>${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noopener">${t}</a>` : t}</li>`;
+  }).join("");
+  return `<div class="block"><div class="lbl">supporting evidence</div><ul class="cites">${items}</ul></div>`;
+}
+
+function card(h, i) {
+  const b = h.bridge;
+  return `<div class="card">
+    <div class="h-statement">${i+1}. ${esc(h.statement)}</div>
+    ${nodeChain(h)}
+    <div class="scores">
+      <span class="badge">overall <b>${b.score.toFixed(3)}</b></span>
+      <span class="badge nov">novelty <b>${(h.novelty_score*100).toFixed(0)}%</b></span>
+      <span class="badge plaus">plausibility <b>${(h.plausibility_score*100).toFixed(0)}%</b></span>
+      <span class="badge">bridges <b>${b.bridge_support}</b></span>
+      <span class="badge">direct co-mentions <b>${b.direct_cooccurrence}</b></span>
+    </div>
+    <div class="block"><div class="lbl">proposed mechanism</div><div class="val">${esc(h.mechanism)}</div></div>
+    <div class="block"><div class="lbl">how to test it</div><div class="val">${esc(h.experiment)}</div></div>
+    ${cites(h)}
+    <div class="gen">generated by: ${esc(h.generated_by)}</div>
+  </div>`;
+}
+
+function traceBox(report) {
+  if (!report.trace || !report.trace.length) return "";
+  const steps = report.trace.map(ev =>
+    `<div class="tracestep"><b>[${esc(ev.step)}]</b> ${esc(ev.detail)}</div>`).join("");
+  return `<details class="trace"><summary>Reasoning trace (${report.trace.length} steps) — fully auditable</summary>${steps}</details>`;
+}
+
+async function discover(topic, offline) {
+  $("#go").disabled = true;
+  $("#status").innerHTML = `<span class="spin"></span>Growing connections through the literature…`;
+  $("#results").innerHTML = ""; $("#meta").innerHTML = ""; $("#tracebox").innerHTML = "";
+  try {
+    const r = await fetch("/api/discover", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ topic, offline, max_hypotheses: 6 })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const report = await r.json();
+    render(report);
+  } catch (e) {
+    $("#status").textContent = "Something went wrong: " + e.message;
+  } finally {
+    $("#go").disabled = false;
+  }
+}
+
+function render(report) {
+  const sc = report.source_concept;
+  if (sc) {
+    $("#meta").innerHTML = `Source concept <b>${esc(sc.name)}</b> · source data <b>${esc(report.source_name)}</b>
+      · reasoner <b>${esc(report.reasoner)}</b> · ${esc(JSON.stringify(report.stats))}`;
+  }
+  if (!report.hypotheses || !report.hypotheses.length) {
+    $("#status").textContent = "No novel cross-domain links surfaced for this topic. Try another phrasing.";
+    $("#tracebox").innerHTML = traceBox(report);
+    return;
+  }
+  $("#status").textContent = `Surfaced ${report.hypotheses.length} candidate cross-domain hypotheses.`;
+  $("#results").innerHTML = report.hypotheses.map((h,i) => card(h,i)).join("");
+  $("#tracebox").innerHTML = traceBox(report);
+}
+
+function run() {
+  const topic = $("#topic").value.trim();
+  if (!topic) { $("#topic").focus(); return; }
+  discover(topic, $("#offline").checked);
+}
+$("#go").addEventListener("click", run);
+$("#topic").addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+  $("#topic").value = c.textContent.trim();
+  $("#offline").checked = c.dataset.off === "1";
+  run();
+}));
+</script>
+</body>
+</html>
