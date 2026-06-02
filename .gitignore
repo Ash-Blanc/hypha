@@ -17,6 +17,11 @@ env/
 # Hypha runtime cache
 .hypha_cache/
 
+# Local secrets (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
 # OS / editor
 .DS_Store
 *.swp

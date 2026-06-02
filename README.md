@@ -138,6 +138,7 @@ environment from `uv.lock` on first use — no manual venv/activate needed.
 
 ```bash
 uv sync                       # install deps into .venv from the lockfile
+cp .env.example .env          # optional — add API keys to unlock richer output
 
 # Offline demo — reproduces Swanson's two textbook discoveries, no network:
 uv run hypha discover "Raynaud disease" --offline
@@ -184,7 +185,10 @@ export PAPERCLIP_API_KEY=...     # gxl.ai Paperclip (also: pip install gxl_paper
 ```
 
 Everything is auto-detected; if any call fails, Hypha degrades gracefully back
-to the free defaults (offline reasoner / OpenAlex evidence).
+to the free defaults (offline reasoner / OpenAlex evidence). All of these can
+also be put in a local `.env` (copy `.env.example`) — Hypha loads it
+automatically, and real environment variables always take precedence. See
+[`.env.example`](.env.example) for the full list.
 
 ---
 
