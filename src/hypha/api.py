@@ -27,6 +27,7 @@ class DiscoverRequest(BaseModel):
     max_hypotheses: int = 6
     verify: bool = False
     evidence: Optional[str] = None
+    target: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -52,6 +53,7 @@ def discover(req: DiscoverRequest) -> JSONResponse:
         max_hypotheses=max(1, min(req.max_hypotheses, 12)),
         verify=req.verify,
         evidence=None if req.evidence in (None, "auto") else req.evidence,
+        target=None if req.target in (None, "any") else req.target,
     )
     return JSONResponse(report.model_dump())
 
@@ -63,6 +65,7 @@ def discover_get(
     max_hypotheses: int = Query(6),
     verify: bool = Query(False),
     evidence: Optional[str] = Query(None),
+    target: Optional[str] = Query(None),
 ) -> JSONResponse:
     return discover(
         DiscoverRequest(
@@ -71,5 +74,6 @@ def discover_get(
             max_hypotheses=max_hypotheses,
             verify=verify,
             evidence=evidence,
+            target=target,
         )
     )

@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from hypha.agent import run_discovery
+from hypha.agent import run_discovery, run_explain
 from hypha.models import DiscoveryReport
 
 BANNER = "hypha :: literature-based discovery engine"
@@ -78,6 +78,23 @@ def cmd_discover(args: argparse.Namespace) -> int:
         prefer_llm=not args.no_llm,
         verify=args.verify,
         evidence=None if args.evidence == "auto" else args.evidence,
+        target=None if args.target == "any" else args.target,
+    )
+    if args.json:
+        print(json.dumps(report.model_dump(), indent=2))
+    else:
+        _print_report(report)
+    return 0
+
+
+def cmd_explain(args: argparse.Namespace) -> int:
+    report = run_explain(
+        args.a,
+        args.c,
+        offline=args.offline,
+        prefer_llm=not args.no_llm,
+        verify=args.verify,
+        evidence=None if args.evidence == "auto" else args.evidence,
     )
     if args.json:
         print(json.dumps(report.model_dump(), indent=2))
@@ -102,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--offline", action="store_true", help="Use the bundled offline fixture (no network).")
     d.add_argument("--no-llm", action="store_true", help="Force the deterministic reasoner even if an API key is set.")
     d.add_argument("--max", type=int, default=8, help="Maximum number of hypotheses to return.")
+    d.add_argument(
+        "--target",
+        choices=["any", "drug", "chemical", "disease", "anatomy", "organism", "technique", "psychology", "phenomenon"],
+        default="any",
+        help="Constrain target concept C to a MeSH type (e.g. 'drug' for repurposing). Live mode only.",
+    )
     d.add_argument("--verify", action="store_true", help="Verify each link against the literature and re-rank by verified novelty.")
     d.add_argument(
         "--evidence",
@@ -111,6 +134,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     d.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     d.set_defaults(func=cmd_discover)
+
+    e = sub.add_parser("explain", help="Closed discovery: explain why A and C might be linked.")
+    e.add_argument("a", help="Concept A (e.g. 'Raynaud disease').")
+    e.add_argument("c", help="Concept C (e.g. 'Fish oil').")
+    e.add_argument("--offline", action="store_true", help="Use the bundled offline fixture (no network).")
+    e.add_argument("--no-llm", action="store_true", help="Force the deterministic reasoner.")
+    e.add_argument("--verify", action="store_true", help="Verify the link against the literature.")
+    e.add_argument("--evidence", choices=["auto", "openalex", "parallel", "paperclip"], default="auto")
+    e.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
+    e.set_defaults(func=cmd_explain)
 
     s = sub.add_parser("serve", help="Start the web UI / API server.")
     s.add_argument("--host", default="127.0.0.1")

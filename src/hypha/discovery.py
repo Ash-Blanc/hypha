@@ -192,6 +192,10 @@ class DiscoveryConfig:
     n_candidates_checked: int = 25
     max_results: int = 8
     min_level: int = 2
+    # Optional MeSH category letters the target C must belong to (e.g. {"D"} for
+    # drugs/chemicals). ``None`` = no type constraint.
+    target_categories: Optional[frozenset[str]] = None
+    n_typed_pool: int = 80  # how many top candidates to type before filtering
     # Novelty is measured by *lift* (observed direct co-occurrence / expected by
     # chance) rather than a raw count, so it works for both tiny and huge
     # fields. A pair is "novel" when it co-occurs no more than ``max_lift`` times
@@ -239,6 +243,7 @@ def discover_links(
     source: ScholarSource,
     topic: str,
     config: DiscoveryConfig | None = None,
+    typer: object | None = None,
 ) -> tuple[Concept | None, list[BridgeLink], dict, list[TraceEvent]]:
     cfg = config or DiscoveryConfig()
     trace: list[TraceEvent] = []
@@ -328,6 +333,39 @@ def discover_links(
 
     # Preliminary ranking before the (costlier) direct-co-occurrence check.
     filtered.sort(key=lambda c: (len(c.bridges), c.path_strength), reverse=True)
+
+    # Optional MeSH type constraint on the target C (e.g. drugs only).
+    if cfg.target_categories and typer is not None:
+        pool = filtered[: cfg.n_typed_pool]
+        try:
+            types = typer.type_many([c.concept.name for c in pool])
+        except Exception:  # noqa: BLE001 - fail open if typing is unavailable
+            types = {}
+        if any(types.values()):
+            kept = [
+                c for c in pool
+                if types.get(c.concept.name, set()) & cfg.target_categories
+            ]
+            trace.append(
+                TraceEvent(
+                    step="type",
+                    detail=(
+                        f"Constrained targets to MeSH categories "
+                        f"{sorted(cfg.target_categories)}: kept {len(kept)} of "
+                        f"{len(pool)} typed candidates."
+                    ),
+                    data={"kept": [c.concept.name for c in kept][:20]},
+                )
+            )
+            filtered = kept if kept else filtered
+        else:
+            trace.append(
+                TraceEvent(
+                    step="type",
+                    detail="MeSH typing unavailable; proceeding without a type filter.",
+                )
+            )
+
     short = filtered[: cfg.n_candidates_checked]
 
     # --- Novelty: how rarely do A and C actually appear together? ---------
@@ -375,3 +413,79 @@ def discover_links(
         "results": len(links),
     }
     return a, links, stats, trace
+
+
+def explain_link(
+    source: ScholarSource,
+    a_topic: str,
+    c_topic: str,
+    config: DiscoveryConfig | None = None,
+) -> tuple[Concept | None, Concept | None, BridgeLink | None, list[TraceEvent]]:
+    """Closed discovery: given A *and* C, find the bridge concepts B that connect
+    them and explain the implied path.
+
+    Where :func:`discover_links` answers "what novel C relates to A?", this
+    answers "*why* might A and C be related?" - useful for explaining a
+    repurposing candidate (drug C, disease A) or an observed association.
+    """
+    cfg = config or DiscoveryConfig()
+    trace: list[TraceEvent] = []
+
+    a = source.resolve_concept(a_topic)
+    c = source.resolve_concept(c_topic)
+    if a is None or c is None:
+        missing = a_topic if a is None else c_topic
+        trace.append(TraceEvent(step="resolve", detail=f"Could not resolve '{missing}'."))
+        return a, c, None, trace
+    trace.append(
+        TraceEvent(step="resolve", detail=f"A='{a.name}', C='{c.name}'.")
+    )
+
+    a_cooc = source.cooccurring_concepts(a, limit=cfg.bridge_pool)
+    c_cooc = source.cooccurring_concepts(c, limit=cfg.bridge_pool)
+    _ensure_levels(source, a_cooc)
+    _ensure_levels(source, c_cooc)
+    a_norm = _normalize({x.short_id(): x.score for x in a_cooc})
+    c_norm = _normalize({x.short_id(): x.score for x in c_cooc})
+    c_by_id = {x.short_id(): x for x in c_cooc}
+
+    a_terms = _distinctive_tokens(a.name)
+    c_terms = _distinctive_tokens(c.name)
+
+    shared: list[tuple[Concept, float]] = []
+    for b in a_cooc:
+        bid = b.short_id()
+        if bid not in c_by_id or bid in (a.short_id(), c.short_id()):
+            continue
+        if b.level < cfg.min_level or _is_generic(b.name) or _bad_parenthetical(b.name):
+            continue
+        bt = _distinctive_tokens(b.name)
+        if (a_terms and bt & a_terms) or (c_terms and bt & c_terms):
+            continue
+        strength = math.sqrt(max(a_norm.get(bid, 0), 1e-6) * max(c_norm.get(bid, 0), 1e-6))
+        shared.append((b, strength))
+
+    shared.sort(key=lambda t: t[1], reverse=True)
+    top = shared[: cfg.n_bridges]
+    trace.append(
+        TraceEvent(
+            step="bridges",
+            detail=f"Found {len(shared)} shared intermediate concepts; using top {len(top)}.",
+            data={"bridges": [b.name for b, _ in top]},
+        )
+    )
+    if not top:
+        return a, c, None, trace
+
+    direct = source.cooccurrence_count(a, c)
+    link = BridgeLink(
+        source=a,
+        target=c,
+        bridges=[b for b, _ in top],
+        direct_cooccurrence=direct,
+        bridge_support=len(top),
+        path_strength=sum(s for _, s in top),
+        novelty=1.0 / (1.0 + direct),
+        score=sum(s for _, s in top),
+    )
+    return a, c, link, trace

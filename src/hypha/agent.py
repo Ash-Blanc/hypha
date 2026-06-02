@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from hypha.discovery import DiscoveryConfig, discover_links
+from hypha.discovery import DiscoveryConfig, discover_links, explain_link
 from hypha.evidence import EvidenceProvider, Verifier
 from hypha.models import DiscoveryReport, Hypothesis, TraceEvent
 from hypha.reasoning import FallbackReasoner, get_reasoner
@@ -30,11 +30,13 @@ class DiscoveryAgent:
         config: Optional[DiscoveryConfig] = None,
         prefer_llm: bool = True,
         evidence_provider: Optional[EvidenceProvider] = None,
+        typer: object | None = None,
     ) -> None:
         self.source = source or OpenAlexSource()
         self.reasoner = reasoner or get_reasoner(prefer_llm=prefer_llm)
         self.config = config or DiscoveryConfig()
         self.evidence_provider = evidence_provider
+        self.typer = typer
 
     def discover(
         self,
@@ -46,7 +48,9 @@ class DiscoveryAgent:
         if max_hypotheses is not None:
             cfg = DiscoveryConfig(**{**cfg.__dict__, "max_results": max_hypotheses})
 
-        source_concept, links, stats, trace = discover_links(self.source, topic, cfg)
+        source_concept, links, stats, trace = discover_links(
+            self.source, topic, cfg, typer=self.typer
+        )
         report = DiscoveryReport(
             topic=topic,
             source_concept=source_concept,
@@ -79,6 +83,33 @@ class DiscoveryAgent:
             hypotheses = self._verify(hypotheses, report)
 
         report.hypotheses = hypotheses
+        return report
+
+    def explain(self, a_topic: str, c_topic: str, verify: bool = False) -> DiscoveryReport:
+        """Closed discovery: explain *why* A and C might be linked (find B path)."""
+        a, c, link, trace = explain_link(self.source, a_topic, c_topic, self.config)
+        report = DiscoveryReport(
+            topic=f"{a_topic} \u2194 {c_topic}",
+            source_concept=a,
+            trace=list(trace),
+            source_name=getattr(self.source, "name", "unknown"),
+            reasoner=getattr(self.reasoner, "name", "fallback"),
+        )
+        if link is None:
+            report.trace.append(
+                TraceEvent(step="done", detail="No shared bridge concepts found.")
+            )
+            return report
+        works = self._citations(link)
+        hyp = self.reasoner.reason(link, works)
+        hyp = self._critique(hyp)
+        if verify and self.evidence_provider is not None:
+            Verifier(self.evidence_provider).verify(hyp)
+        report.hypotheses = [hyp]
+        report.stats = {"bridges": link.bridge_support, "direct": link.direct_cooccurrence}
+        report.trace.append(
+            TraceEvent(step="explain", detail=f"Built bridge explanation via '{report.reasoner}'.")
+        )
         return report
 
     def _verify(self, hypotheses: list[Hypothesis], report: DiscoveryReport) -> list[Hypothesis]:
@@ -150,8 +181,57 @@ def run_discovery(
     prefer_llm: bool = True,
     verify: bool = False,
     evidence: Optional[str] = None,
+    target: Optional[str] = None,
 ) -> DiscoveryReport:
     """Convenience entry point used by the CLI and API."""
+    from hypha.evidence import get_evidence_provider
+    from hypha.mesh import resolve_target
+
+    target_categories = resolve_target(target)
+    config = DiscoveryConfig(target_categories=target_categories)
+
+    if offline:
+        from hypha.sources.fixture import FixtureSource
+
+        agent = DiscoveryAgent(
+            source=FixtureSource(),
+            reasoner=FallbackReasoner(),
+            prefer_llm=False,
+            config=config,
+            evidence_provider=get_evidence_provider(offline=True) if verify else None,
+        )
+    else:
+        source = OpenAlexSource()
+        provider = (
+            get_evidence_provider(offline=False, source=source, prefer=evidence)
+            if verify
+            else None
+        )
+        typer = None
+        if target_categories:
+            from hypha.mesh import MeshTyper
+
+            typer = MeshTyper()
+        agent = DiscoveryAgent(
+            source=source,
+            prefer_llm=prefer_llm,
+            config=config,
+            evidence_provider=provider,
+            typer=typer,
+        )
+    return agent.discover(topic, max_hypotheses=max_hypotheses, verify=verify)
+
+
+def run_explain(
+    a_topic: str,
+    c_topic: str,
+    *,
+    offline: bool = False,
+    prefer_llm: bool = True,
+    verify: bool = False,
+    evidence: Optional[str] = None,
+) -> DiscoveryReport:
+    """Closed-discovery entry point used by the CLI and API."""
     from hypha.evidence import get_evidence_provider
 
     if offline:
@@ -173,4 +253,4 @@ def run_discovery(
         agent = DiscoveryAgent(
             source=source, prefer_llm=prefer_llm, evidence_provider=provider
         )
-    return agent.discover(topic, max_hypotheses=max_hypotheses, verify=verify)
+    return agent.explain(a_topic, c_topic, verify=verify)

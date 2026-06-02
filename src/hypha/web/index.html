@@ -63,6 +63,8 @@
   button.go:disabled { opacity: .55; cursor: default; transform:none; }
   .opts { display:flex; gap:16px; align-items:center; color:var(--muted); font-size:.86rem; }
   .opts label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .opts select { background: var(--panel-2); border:1px solid var(--border); color:var(--text);
+                 border-radius:8px; padding:4px 6px; }
   .examples { text-align:center; margin: 6px 0 0; color: var(--muted); font-size:.86rem; }
   .chip {
     display:inline-block; margin:6px 5px 0; padding:6px 12px; border:1px solid var(--border);
@@ -148,6 +150,17 @@
         </label>
         <label title="Independently check each link against the literature and re-rank by verified novelty">
           <input id="verify" type="checkbox" /> verify vs. literature
+        </label>
+        <label title="Constrain the target concept to a MeSH type (e.g. drugs, for repurposing). Live mode only.">
+          target:
+          <select id="target">
+            <option value="any">any</option>
+            <option value="drug">drug / chemical</option>
+            <option value="disease">disease</option>
+            <option value="technique">technique</option>
+            <option value="anatomy">anatomy</option>
+            <option value="organism">organism</option>
+          </select>
         </label>
       </div>
       <button class="go" id="go">Discover</button>
@@ -253,7 +266,7 @@ async function discover(topic, offline) {
   try {
     const r = await fetch("/api/discover", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ topic, offline, max_hypotheses: 6, verify: $("#verify").checked })
+      body: JSON.stringify({ topic, offline, max_hypotheses: 6, verify: $("#verify").checked, target: $("#target").value })
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const report = await r.json();

@@ -101,6 +101,34 @@ Evidence providers are **pluggable / bring-your-own-key**:
 Priority when multiple are configured: **Paperclip → Parallel → OpenAlex**
 (override with `--evidence`).
 
+## Typed targets (drug repurposing) & closed discovery
+
+**Typed targets** (`--target`) constrain the discovered concept **C** to a MeSH
+semantic category, turning open discovery into a focused mode — most usefully
+*disease → drug* repurposing. OpenAlex can't type concepts, so Hypha resolves
+each candidate's type through MeSH (NCBI term translation → NLM MeSH tree
+number; free, key-less, cached):
+
+```bash
+hypha discover "Alzheimer disease" --target drug      # keep MeSH chemical/drug targets
+hypha discover "psoriasis" --target disease           # comorbidity discovery
+```
+
+Presets map to MeSH tree letters: `drug`/`chemical`→D, `disease`→C, `anatomy`→A,
+`organism`→B, `technique`→E, `psychology`→F, `phenomenon`→G.
+
+**Closed discovery** (`hypha explain A C`) answers the complementary question —
+not "what novel C relates to A?" but "*why* might A and C be related?" — by
+finding the bridge concepts **B** shared by both and explaining the implied
+mechanism. Great for sanity-checking a repurposing candidate:
+
+```bash
+hypha explain "Alzheimer disease" "Metformin"
+# → bridges: Diabetes mellitus, Insulin, Inflammation, Oxidative stress,
+#            Signal transduction …  (the insulin-signalling rationale), and
+#   flags it as already heavily studied (77 direct co-mentions).
+```
+
 ---
 
 ## Quickstart
@@ -121,7 +149,14 @@ hypha discover "Alzheimer disease" --json
 hypha discover "Raynaud disease" --verify
 hypha discover "type 2 diabetes" --verify --evidence parallel   # needs PARALLEL_API_KEY
 
-# Web UI + JSON API (tick "verify vs. literature" in the UI):
+# Drug-repurposing mode — constrain targets to MeSH chemicals/drugs:
+hypha discover "Alzheimer disease" --target drug
+
+# Closed discovery — explain WHY two concepts might be linked (find the B path):
+hypha explain "Alzheimer disease" "Metformin"
+hypha explain "Raynaud disease" "Fish oil" --offline
+
+# Web UI + JSON API (verify toggle + target dropdown in the UI):
 hypha serve            # → http://127.0.0.1:8000
 ```
 
@@ -178,7 +213,8 @@ recovered purely from co-occurrence structure.
 | Module | Responsibility |
 | --- | --- |
 | `hypha/sources/` | Pluggable scholarly backends (`OpenAlexSource`, offline `FixtureSource`). Swap in PubMed/Semantic Scholar by implementing `ScholarSource`. |
-| `hypha/discovery.py` | The ABC engine: bridge finding, candidate expansion, lift-based novelty, IDF specificity, generic/homonym filters. |
+| `hypha/discovery.py` | The ABC engine: bridge finding, candidate expansion, lift-based novelty, IDF specificity, filters, + closed discovery (`explain_link`). |
+| `hypha/mesh.py` | `MeshTyper`: free MeSH semantic typing (NCBI translation → NLM MeSH tree) powering `--target`. |
 | `hypha/evidence.py` | Verification layer: `EvidenceProvider`s (OpenAlex / Parallel / Paperclip / fixture) + `Verifier` (verdict + re-rank). |
 | `hypha/reasoning.py` | Turns a `BridgeLink` into a `Hypothesis`. LLM (BYOK) or deterministic fallback. |
 | `hypha/agent.py` | Orchestration, citation gathering, self-critique, verification, transparent trace. |
@@ -211,7 +247,7 @@ For a candidate link A→C reached through bridges B:
   `established` rather than novel.
 
 ```bash
-pytest -q          # 21 tests, fully offline
+pytest -q          # 30 tests, fully offline
 ```
 
 ---
@@ -226,22 +262,24 @@ favor of Topics. Consequences we handle but don't fully solve:
   generic/homonym stoplists, but precision is bounded by the underlying data.
 - Co-occurrence ≠ causation; novelty ≠ correctness. Output is for triage.
 
+**Shipped:** verification layer (OpenAlex/Parallel/Paperclip providers);
+MeSH-typed targets (`--target drug`) for repurposing; closed discovery
+(`hypha explain A C`).
+
 **Roadmap (in priority order):**
 
-1. **Typed entities** — swap OpenAlex concepts for PubMed/MeSH + UMLS semantic
-   types so C can be constrained (e.g. *disease → drug* for repurposing). This
-   is the single biggest precision unlock.
+1. **Sharper drug typing** — restrict `--target drug` to MeSH pharmacologic
+   subtrees / "PA" actions (exclude biopolymers like RNA), and add UMLS
+   semantic types for finer control.
 2. **Deeper verification** — promote Paperclip full-text + clinical-trial +
    FDA signals into the verdict (e.g. "0 papers but 2 active trials"), and add
    an LLM `supported / untested / refuted` read over the retrieved evidence.
-   *(Verification scaffolding shipped: OpenAlex/Parallel/Paperclip providers.)*
 3. **Embedding-based bridge diversity** — reward links supported by
    *semantically diverse* bridges, not synonym clusters.
-4. **Closed discovery** — given A *and* C, explain *why* (find the B path).
-5. **Time-sliced back-testing** — train on literature up to year *Y*, measure
+4. **Time-sliced back-testing** — train on literature up to year *Y*, measure
    how many ranked links became real co-publications after *Y* (a real metric).
-6. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
-   trials.
+5. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
+   trials (Paperclip already unlocks much of this).
 
 ---
 
