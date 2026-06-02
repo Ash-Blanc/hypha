@@ -4,8 +4,8 @@ Two reasoners are provided:
 
 * :class:`LLMReasoner` - a thin, dependency-light "bring your own key" client
   that auto-detects an available provider from the environment
-  (OpenAI / Anthropic / Gemini / OpenRouter / Groq) and asks it to draft a
-  mechanism + experiment for each link.
+  (OpenAI / Anthropic / Gemini / Fireworks / OpenRouter / Groq) and asks it to
+  draft a mechanism + experiment for each link.
 * :class:`FallbackReasoner` - a fully deterministic, offline reasoner that
   templates a hypothesis directly from the bridge evidence. It needs no API
   key, so the engine always produces grounded output.
@@ -64,6 +64,14 @@ def detect_provider() -> Optional[ProviderConfig]:
             env.get("HYPHA_MODEL", "claude-3-5-sonnet-latest"),
             env["ANTHROPIC_API_KEY"],
             "anthropic",
+        )
+    if env.get("FIREWORKS_API_KEY"):
+        return ProviderConfig(
+            "fireworks",
+            "https://api.fireworks.ai/inference/v1/chat/completions",
+            env.get("HYPHA_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
+            env["FIREWORKS_API_KEY"],
+            "openai",
         )
     if env.get("OPENROUTER_API_KEY"):
         return ProviderConfig(

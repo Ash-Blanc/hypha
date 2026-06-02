@@ -179,8 +179,12 @@ to get richer, model-written mechanisms and experiments:
 ```bash
 # Hypothesis writing (optional):
 export OPENAI_API_KEY=...        # or ANTHROPIC_API_KEY / GEMINI_API_KEY /
-                                 #    OPENROUTER_API_KEY / GROQ_API_KEY
+                                 #    FIREWORKS_API_KEY / OPENROUTER_API_KEY / GROQ_API_KEY
 export HYPHA_MODEL=gpt-4o-mini   # optional model override
+
+# Example — use Fireworks AI:
+export FIREWORKS_API_KEY=fw_...
+export HYPHA_MODEL=accounts/fireworks/models/gpt-oss-120b
 
 # Verification evidence providers (optional; OpenAlex is the free default):
 export PARALLEL_API_KEY=...      # parallel.ai Search API
