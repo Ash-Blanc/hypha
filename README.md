@@ -162,6 +162,9 @@ uv run hypha explain "Raynaud disease" "Fish oil" --offline
 # Back-test — would past predictions have come true? (precision@k of discovery)
 uv run hypha backtest "multiple sclerosis" --year 2013 --k 10
 
+# Compare OpenAlex ABC discovery vs Paperclip search mining (A/B metrics):
+uv run hypha compare "cataract" --verify
+
 # Web UI + JSON API (verify toggle + target dropdown in the UI):
 uv run hypha serve            # → http://127.0.0.1:8000
 ```
@@ -179,8 +182,12 @@ to get richer, model-written mechanisms and experiments:
 ```bash
 # Hypothesis writing (optional):
 export OPENAI_API_KEY=...        # or ANTHROPIC_API_KEY / GEMINI_API_KEY /
-                                 #    OPENROUTER_API_KEY / GROQ_API_KEY
+                                 #    FIREWORKS_API_KEY / OPENROUTER_API_KEY / GROQ_API_KEY
 export HYPHA_MODEL=gpt-4o-mini   # optional model override
+
+# Example — use Fireworks AI:
+export FIREWORKS_API_KEY=fw_...
+export HYPHA_MODEL=accounts/fireworks/models/gpt-oss-120b
 
 # Verification evidence providers (optional; OpenAlex is the free default):
 export PARALLEL_API_KEY=...      # parallel.ai Search API
@@ -234,7 +241,9 @@ recovered purely from co-occurrence structure.
 | `hypha/backtest.py` | Time-sliced validation harness (`hypha backtest`): precision@k of discovery. |
 | `hypha/config.py` | Zero-dependency `.env` loader (real env always wins). |
 | `hypha/api.py` + `hypha/web/` | FastAPI backend and a single-page UI. |
-| `hypha/cli.py` | `hypha discover` / `explain` / `backtest` / `serve`. |
+| `hypha/cli.py` | `hypha discover` / `explain` / `compare` / `backtest` / `serve`. |
+| `hypha/compare.py` | Side-by-side OpenAlex vs Paperclip with nonsense/actionable metrics. |
+| `hypha/paperclip_client.py` | Paperclip REST client (`PAPERCLIP_API_KEY`). |
 
 ---
 
