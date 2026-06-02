@@ -162,6 +162,9 @@ uv run hypha explain "Raynaud disease" "Fish oil" --offline
 # Back-test — would past predictions have come true? (precision@k of discovery)
 uv run hypha backtest "multiple sclerosis" --year 2013 --k 10
 
+# Compare OpenAlex ABC discovery vs Paperclip search mining (A/B metrics):
+uv run hypha compare "cataract" --verify
+
 # Web UI + JSON API (verify toggle + target dropdown in the UI):
 uv run hypha serve            # → http://127.0.0.1:8000
 ```
