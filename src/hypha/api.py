@@ -10,7 +10,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from hypha.agent import run_discovery
+from hypha.config import load_env
 from hypha.reasoning import detect_provider
+
+load_env()
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 

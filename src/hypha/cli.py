@@ -155,6 +155,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from hypha.config import load_env
+
+    load_env()
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     return args.func(args)
