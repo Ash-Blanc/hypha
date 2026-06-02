@@ -110,8 +110,8 @@ each candidate's type through MeSH (NCBI term translation → NLM MeSH tree
 number; free, key-less, cached):
 
 ```bash
-hypha discover "Alzheimer disease" --target drug      # keep MeSH chemical/drug targets
-hypha discover "psoriasis" --target disease           # comorbidity discovery
+uv run hypha discover "Alzheimer disease" --target drug   # keep MeSH chemical/drug targets
+uv run hypha discover "psoriasis" --target disease        # comorbidity discovery
 ```
 
 Presets map to MeSH tree letters: `drug`/`chemical`→D, `disease`→C, `anatomy`→A,
@@ -123,7 +123,7 @@ finding the bridge concepts **B** shared by both and explaining the implied
 mechanism. Great for sanity-checking a repurposing candidate:
 
 ```bash
-hypha explain "Alzheimer disease" "Metformin"
+uv run hypha explain "Alzheimer disease" "Metformin"
 # → bridges: Diabetes mellitus, Insulin, Inflammation, Oxidative stress,
 #            Signal transduction …  (the insulin-signalling rationale), and
 #   flags it as already heavily studied (77 direct co-mentions).
@@ -133,32 +133,38 @@ hypha explain "Alzheimer disease" "Metformin"
 
 ## Quickstart
 
+Hypha uses [uv](https://docs.astral.sh/uv/). `uv run` auto-creates the
+environment from `uv.lock` on first use — no manual venv/activate needed.
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
+uv sync                       # install deps into .venv from the lockfile
 
 # Offline demo — reproduces Swanson's two textbook discoveries, no network:
-hypha discover "Raynaud disease" --offline
-hypha discover "Migraine" --offline
+uv run hypha discover "Raynaud disease" --offline
+uv run hypha discover "Migraine" --offline
 
 # Live discovery over OpenAlex (free, no API key):
-hypha discover "type 2 diabetes"
-hypha discover "Alzheimer disease" --json
+uv run hypha discover "type 2 diabetes"
+uv run hypha discover "Alzheimer disease" --json
 
 # Propose AND verify each link against the literature, then re-rank:
-hypha discover "Raynaud disease" --verify
-hypha discover "type 2 diabetes" --verify --evidence parallel   # needs PARALLEL_API_KEY
+uv run hypha discover "Raynaud disease" --verify
+uv run hypha discover "type 2 diabetes" --verify --evidence parallel   # needs PARALLEL_API_KEY
 
 # Drug-repurposing mode — constrain targets to MeSH chemicals/drugs:
-hypha discover "Alzheimer disease" --target drug
+uv run hypha discover "Alzheimer disease" --target drug
 
 # Closed discovery — explain WHY two concepts might be linked (find the B path):
-hypha explain "Alzheimer disease" "Metformin"
-hypha explain "Raynaud disease" "Fish oil" --offline
+uv run hypha explain "Alzheimer disease" "Metformin"
+uv run hypha explain "Raynaud disease" "Fish oil" --offline
 
 # Web UI + JSON API (verify toggle + target dropdown in the UI):
-hypha serve            # → http://127.0.0.1:8000
+uv run hypha serve            # → http://127.0.0.1:8000
 ```
+
+> No `uv`? Install it with `curl -fsSL https://astral.sh/uv/install.sh | sh`
+> (or `pip install uv`). Or use plain pip: `pip install -e .` then drop the
+> `uv run` prefix.
 
 ### Bring your own LLM key (optional)
 
@@ -184,7 +190,7 @@ to the free defaults (offline reasoner / OpenAlex evidence).
 
 ## Example (live, real OpenAlex data)
 
-`hypha discover "type 2 diabetes"` surfaces, among others:
+`uv run hypha discover "type 2 diabetes"` surfaces, among others:
 
 > **Type 2 diabetes ↔ Breast cancer** via *insulin, obesity, insulin resistance,
 > body-mass index, metformin.*
@@ -247,7 +253,7 @@ For a candidate link A→C reached through bridges B:
   `established` rather than novel.
 
 ```bash
-pytest -q          # 30 tests, fully offline
+uv run pytest      # 30 tests, fully offline
 ```
 
 ---

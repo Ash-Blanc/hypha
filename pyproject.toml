@@ -25,11 +25,14 @@ dependencies = [
     "uvicorn[standard]>=0.29",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
-
 [project.scripts]
 hypha = "hypha.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
