@@ -70,8 +70,15 @@ class OpenAlexSource:
         cache_dir: Optional[str] = None,
         timeout: float = 30.0,
         min_interval: float = 0.1,
+        from_year: Optional[int] = None,
+        to_year: Optional[int] = None,
     ) -> None:
         self.mailto = mailto or os.environ.get("OPENALEX_MAILTO", "hypha@example.org")
+        # Optional publication-date window applied to every /works query. Used by
+        # the back-test to run discovery "as of" a past year and to detect links
+        # that only emerged afterwards.
+        self.from_year = from_year
+        self.to_year = to_year
         self.cache_dir = Path(
             cache_dir or os.environ.get("HYPHA_CACHE_DIR", ".hypha_cache")
         )
@@ -88,6 +95,14 @@ class OpenAlexSource:
     def _cache_path(self, url: str) -> Path:
         digest = hashlib.sha256(url.encode()).hexdigest()[:32]
         return self.cache_dir / f"{digest}.json"
+
+    def _window(self, filter_str: str) -> str:
+        """Append the publication-date window (if any) to a /works filter."""
+        if self.from_year is not None:
+            filter_str += f",from_publication_date:{self.from_year}-01-01"
+        if self.to_year is not None:
+            filter_str += f",to_publication_date:{self.to_year}-12-31"
+        return filter_str
 
     def _get(self, path: str, params: dict[str, Any]) -> dict:
         params = {**params, "mailto": self.mailto}
@@ -168,7 +183,7 @@ class OpenAlexSource:
         data = self._get(
             "/works",
             {
-                "filter": f"concepts.id:{concept.short_id()}",
+                "filter": self._window(f"concepts.id:{concept.short_id()}"),
                 "group_by": "concepts.id",
                 "per_page": 200,
             },
@@ -192,7 +207,9 @@ class OpenAlexSource:
         data = self._get(
             "/works",
             {
-                "filter": f"concepts.id:{a.short_id()},concepts.id:{c.short_id()}",
+                "filter": self._window(
+                    f"concepts.id:{a.short_id()},concepts.id:{c.short_id()}"
+                ),
                 "per_page": 1,
             },
         )
@@ -232,7 +249,7 @@ class OpenAlexSource:
         data = self._get(
             "/works",
             {
-                "filter": ids,
+                "filter": self._window(ids),
                 "per_page": limit,
                 "sort": "cited_by_count:desc",
                 "select": "id,title,publication_year,doi",
@@ -264,7 +281,7 @@ class OpenAlexSource:
         This is an independent novelty signal from the concept co-occurrence the
         engine uses to *propose* a link, so it is a meaningful cross-check.
         """
-        flt = (
+        flt = self._window(
             f"title_and_abstract.search:{self._clean(a_name)},"
             f"title_and_abstract.search:{self._clean(c_name)}"
         )
@@ -272,7 +289,7 @@ class OpenAlexSource:
         return int(data.get("meta", {}).get("count", 0))
 
     def comention_works(self, a_name: str, c_name: str, limit: int = 4) -> list[dict]:
-        flt = (
+        flt = self._window(
             f"title_and_abstract.search:{self._clean(a_name)},"
             f"title_and_abstract.search:{self._clean(c_name)}"
         )

@@ -103,6 +103,43 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest(args: argparse.Namespace) -> int:
+    from hypha.backtest import backtest
+
+    res = backtest(
+        args.topic,
+        args.year,
+        k=args.k,
+        emergence_threshold=args.threshold,
+    )
+    if args.json:
+        import dataclasses
+
+        print(json.dumps({"summary": res.summary(),
+                          "links": [dataclasses.asdict(l) for l in res.links]}, indent=2))
+        return 0
+
+    line = "=" * 72
+    print(line)
+    print(f"{BANNER}  ::  back-test")
+    print(line)
+    s = res.summary()
+    print(f"Topic            : {res.topic}  (source: {res.source_concept})")
+    print(f"Split year       : {res.split_year}   (train <= {res.split_year}, test > {res.split_year})")
+    print(f"Candidates scored: {s['candidates_scored']}   novel-as-of-{res.split_year}: {s['novel_as_of_split']}")
+    print(f"Evaluated (top-k novel predictions): {s['evaluated_predictions']}")
+    print(f"Hits (emerged)   : {s['hits']}")
+    print(f"precision@{res.k:<3}     : {s['precision_at_k']:.3f}   (of top-k novel predictions, fraction that later emerged)")
+    print(line)
+    for l in res.links:
+        flag = "HIT " if l.hit else "miss"
+        print(
+            f"[{flag}] {l.target:<32} past={l.past_comentions:<4} future={l.future_comentions:<6} "
+            f"via {', '.join(l.bridges[:3])}"
+        )
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -144,6 +181,14 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--evidence", choices=["auto", "openalex", "parallel", "paperclip"], default="auto")
     e.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     e.set_defaults(func=cmd_explain)
+
+    b = sub.add_parser("backtest", help="Time-sliced validation: would past predictions have come true?")
+    b.add_argument("topic", help="Source topic / concept A.")
+    b.add_argument("--year", type=int, required=True, help="Split year Y (train on <=Y, test on >Y).")
+    b.add_argument("--k", type=int, default=10, help="Number of top predicted links to score.")
+    b.add_argument("--threshold", type=int, default=3, help="Min future co-mentions to count as 'emerged'.")
+    b.add_argument("--json", action="store_true", help="Emit results as JSON.")
+    b.set_defaults(func=cmd_backtest)
 
     s = sub.add_parser("serve", help="Start the web UI / API server.")
     s.add_argument("--host", default="127.0.0.1")

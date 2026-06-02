@@ -159,6 +159,9 @@ uv run hypha discover "Alzheimer disease" --target drug
 uv run hypha explain "Alzheimer disease" "Metformin"
 uv run hypha explain "Raynaud disease" "Fish oil" --offline
 
+# Back-test — would past predictions have come true? (precision@k of discovery)
+uv run hypha backtest "multiple sclerosis" --year 2013 --k 10
+
 # Web UI + JSON API (verify toggle + target dropdown in the UI):
 uv run hypha serve            # → http://127.0.0.1:8000
 ```
@@ -228,8 +231,10 @@ recovered purely from co-occurrence structure.
 | `hypha/evidence.py` | Verification layer: `EvidenceProvider`s (OpenAlex / Parallel / Paperclip / fixture) + `Verifier` (verdict + re-rank). |
 | `hypha/reasoning.py` | Turns a `BridgeLink` into a `Hypothesis`. LLM (BYOK) or deterministic fallback. |
 | `hypha/agent.py` | Orchestration, citation gathering, self-critique, verification, transparent trace. |
+| `hypha/backtest.py` | Time-sliced validation harness (`hypha backtest`): precision@k of discovery. |
+| `hypha/config.py` | Zero-dependency `.env` loader (real env always wins). |
 | `hypha/api.py` + `hypha/web/` | FastAPI backend and a single-page UI. |
-| `hypha/cli.py` | `hypha discover` / `hypha serve`. |
+| `hypha/cli.py` | `hypha discover` / `explain` / `backtest` / `serve`. |
 
 ---
 
@@ -257,8 +262,27 @@ For a candidate link A→C reached through bridges B:
   `established` rather than novel.
 
 ```bash
-uv run pytest      # 30 tests, fully offline
+uv run pytest      # 37 tests, fully offline
 ```
+
+### Does it actually *predict* discoveries? (`hypha backtest`)
+
+A time-sliced back-test runs discovery using **only literature up to a split
+year Y**, then checks how many of the top-k *genuinely-novel* predictions
+actually emerged as real co-publications afterwards — an honest **precision@k**
+of discovery:
+
+```bash
+uv run hypha backtest "multiple sclerosis" --year 2013 --k 10
+```
+
+What it reveals (and we report honestly): pure concept co-occurrence
+**over-selects already-known links** on heavily-studied fields — the structural
+top-k are mostly already connected, so true novelty lives deeper and is noisier.
+This is exactly why **verification and typing are not optional**, and the
+back-test is the metric that drives that work. See [`PITCH.md`](PITCH.md) and
+[`docs/design-partners.md`](docs/design-partners.md) for how this anchors the
+fundraising and validation story.
 
 ---
 
@@ -274,20 +298,22 @@ favor of Topics. Consequences we handle but don't fully solve:
 
 **Shipped:** verification layer (OpenAlex/Parallel/Paperclip providers);
 MeSH-typed targets (`--target drug`) for repurposing; closed discovery
-(`hypha explain A C`).
+(`hypha explain A C`); time-sliced back-testing (`hypha backtest`).
 
 **Roadmap (in priority order):**
 
-1. **Sharper drug typing** — restrict `--target drug` to MeSH pharmacologic
+1. **Comention-native novelty** — make the engine rank by the independent
+   title/abstract co-mention signal (used by `--verify`/back-test), not just
+   concept-pair lift, so genuinely-novel links surface in the top-k. (The
+   back-test shows this is the key precision lever.)
+2. **Sharper drug typing** — restrict `--target drug` to MeSH pharmacologic
    subtrees / "PA" actions (exclude biopolymers like RNA), and add UMLS
    semantic types for finer control.
-2. **Deeper verification** — promote Paperclip full-text + clinical-trial +
+3. **Deeper verification** — promote Paperclip full-text + clinical-trial +
    FDA signals into the verdict (e.g. "0 papers but 2 active trials"), and add
    an LLM `supported / untested / refuted` read over the retrieved evidence.
-3. **Embedding-based bridge diversity** — reward links supported by
+4. **Embedding-based bridge diversity** — reward links supported by
    *semantically diverse* bridges, not synonym clusters.
-4. **Time-sliced back-testing** — train on literature up to year *Y*, measure
-   how many ranked links became real co-publications after *Y* (a real metric).
 5. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
    trials (Paperclip already unlocks much of this).
 
