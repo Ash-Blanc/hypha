@@ -103,6 +103,61 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    from hypha.compare import run_compare
+
+    report = run_compare(
+        args.topic,
+        max_rows=args.max,
+        verify=args.verify,
+        offline=args.offline,
+        prefer_llm=not args.no_llm,
+        evidence=None if args.evidence == "auto" else args.evidence,
+    )
+    if args.json:
+        import dataclasses
+
+        print(
+            json.dumps(
+                {
+                    "topic": report.topic,
+                    "openalex_source": report.openalex_source,
+                    "summary": report.summary,
+                    "rows": [dataclasses.asdict(r) for r in report.rows],
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    line = "=" * 72
+    print(line)
+    print(f"{BANNER}  ::  compare (OpenAlex vs Paperclip)")
+    print(line)
+    print(f"Topic              : {report.topic}")
+    if report.openalex_source:
+        print(f"OpenAlex source A  : {report.openalex_source}")
+    for pipe in ("openalex", "paperclip"):
+        s = report.summary.get(pipe, {})
+        if not s.get("count"):
+            continue
+        print(
+            f"\n{pipe.upper():10}  nonsense={s['nonsense_rate']:.0%}  "
+            f"actionable={s['actionable_rate']:.0%}  avg_citations={s['avg_citations']:.1f}"
+        )
+    print(line)
+    print(f"{'PIPE':10} {'TARGET':28} {'VERDICT':12} {'SCORE':>6}  BRIDGES / NOTE")
+    print("-" * 72)
+    for r in report.rows:
+        flag = "NOISE" if r.nonsense else "ok   "
+        act = "act" if r.actionable else "   "
+        print(
+            f"{r.pipeline:10} {r.target[:28]:28} {r.verdict:12} {r.score:6.2f}  "
+            f"{flag} {act}  {r.bridges[:40] or r.note}"
+        )
+    return 0
+
+
 def cmd_backtest(args: argparse.Namespace) -> int:
     from hypha.backtest import backtest
 
@@ -181,6 +236,19 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--evidence", choices=["auto", "openalex", "parallel", "paperclip"], default="auto")
     e.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     e.set_defaults(func=cmd_explain)
+
+    c = sub.add_parser(
+        "compare",
+        help="Side-by-side OpenAlex ABC discovery vs Paperclip search mining (A/B metrics).",
+    )
+    c.add_argument("topic", help="Discovery topic (e.g. 'cataract').")
+    c.add_argument("--offline", action="store_true", help="OpenAlex fixture only (Paperclip skipped).")
+    c.add_argument("--no-llm", action="store_true", help="Use deterministic reasoner.")
+    c.add_argument("--max", type=int, default=6, help="Max rows per pipeline.")
+    c.add_argument("--verify", action="store_true", help="Run evidence verification on each row.")
+    c.add_argument("--evidence", choices=["auto", "openalex", "parallel", "paperclip"], default="auto")
+    c.add_argument("--json", action="store_true", help="Emit JSON report.")
+    c.set_defaults(func=cmd_compare)
 
     b = sub.add_parser("backtest", help="Time-sliced validation: would past predictions have come true?")
     b.add_argument("topic", help="Source topic / concept A.")

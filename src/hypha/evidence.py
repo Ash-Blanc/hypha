@@ -149,45 +149,42 @@ class ParallelEvidenceProvider:
 class PaperclipEvidenceProvider:
     """GXL Paperclip (11M+ full-text papers, clinical trials, FDA docs).
 
-    Experimental: requires ``pip install gxl_paperclip`` and ``PAPERCLIP_API_KEY``.
-    Uses count mode for the verdict and a small result set for citations. All
-    calls are defensively wrapped so a schema change degrades gracefully.
+    Experimental: requires ``PAPERCLIP_API_KEY``. Uses Hypha's HTTP client
+    (``/api/cli/execute``) rather than the optional ``gxl_paperclip`` SDK class.
     """
 
     name = "paperclip"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
-        self.api_key = api_key or os.environ.get("PAPERCLIP_API_KEY")
-        self._client = None
-        if self.api_key:
-            try:  # pragma: no cover - optional dependency
-                from gxl_paperclip import Paperclip  # type: ignore
+        from hypha.paperclip_client import PaperclipClient, parse_papers
 
-                self._client = Paperclip(api_key=self.api_key)
-            except Exception:  # noqa: BLE001
-                self._client = None
+        self._parse_papers = parse_papers
+        self._client = PaperclipClient(api_key=api_key or os.environ.get("PAPERCLIP_API_KEY"))
 
     @property
     def available(self) -> bool:
-        return self._client is not None
+        return self._client.available
 
     def gather(self, a_name: str, c_name: str, max_items: int = 4) -> EvidenceResult:  # pragma: no cover - needs key
         query = f'"{a_name}" "{c_name}"'
         items: list[EvidenceItem] = []
         direct = -1
+        if not self.available:
+            return EvidenceResult(direct_hits=-1, items=[], provider=self.name, query=query)
         try:
-            res = self._client.search(query, n=max_items)  # type: ignore[union-attr]
-            results = getattr(res, "results", res) or []
-            direct = len(results)
-            for r in results[:max_items]:
-                get = (lambda k: r.get(k) if isinstance(r, dict) else getattr(r, k, None))
+            res = self._client.search(query, limit=max_items)
+            papers = self._parse_papers(res.output)
+            direct = self._client.count_comention(a_name, c_name)
+            if direct < 0:
+                direct = len(papers)
+            for p in papers[:max_items]:
                 items.append(
                     EvidenceItem(
-                        title=get("title") or "(untitled)",
-                        url=get("doi") or get("url"),
-                        snippet=(get("tldr") or get("abstract") or "")[:240],
-                        source=get("source") or "paperclip",
-                        year=_year_from(get("date") or get("year")),
+                        title=p.get("title") or "(untitled)",
+                        url=p.get("url"),
+                        snippet=(p.get("abstract") or "")[:240],
+                        source=p.get("source") or "paperclip",
+                        year=_year_from(p.get("date")),
                         kind="paper",
                     )
                 )

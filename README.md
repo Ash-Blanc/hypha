@@ -238,7 +238,9 @@ recovered purely from co-occurrence structure.
 | `hypha/backtest.py` | Time-sliced validation harness (`hypha backtest`): precision@k of discovery. |
 | `hypha/config.py` | Zero-dependency `.env` loader (real env always wins). |
 | `hypha/api.py` + `hypha/web/` | FastAPI backend and a single-page UI. |
-| `hypha/cli.py` | `hypha discover` / `explain` / `backtest` / `serve`. |
+| `hypha/cli.py` | `hypha discover` / `explain` / `compare` / `backtest` / `serve`. |
+| `hypha/compare.py` | Side-by-side OpenAlex vs Paperclip with nonsense/actionable metrics. |
+| `hypha/paperclip_client.py` | Paperclip REST client (`PAPERCLIP_API_KEY`). |
 
 ---
 

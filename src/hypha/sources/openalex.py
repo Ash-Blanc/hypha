@@ -35,9 +35,27 @@ _STOP_TERMS = {"disease", "syndrome", "disorder", "the", "of", "and", "s", "a", 
 def _tokenize(text: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", text.lower()) if t and t not in _STOP_TERMS}
 
+
+def _is_generic_source(name: str, level: int) -> bool:
+    return name.strip().lower() in GENERIC_STOPLIST or level < MIN_SOURCE_LEVEL
+
+
+def _concept_from_openalex(c: dict) -> Concept:
+    return Concept(
+        id=c["id"],
+        name=c["display_name"],
+        level=c.get("level", 0),
+        works_count=c.get("works_count", 0),
+        score=float(c.get("relevance_score") or 0.0),
+    )
+
 # OpenAlex concept levels run 0 (broadest, e.g. "Medicine", "Physics") to 5.
 # Bridges drawn from very broad concepts are uninformative, so we keep a small
 # stoplist of root domains as an extra guard alongside a minimum-level filter.
+# Minimum concept level for resolving the user's source topic (A). Level 0 roots
+# like "Medicine" (~86M works) destroy discovery quality.
+MIN_SOURCE_LEVEL = 2
+
 GENERIC_STOPLIST = {
     "medicine",
     "biology",
@@ -126,24 +144,23 @@ class OpenAlexSource:
     # ------------------------------------------------------------ interface
     def resolve_concept(self, topic: str) -> Concept | None:
         # 1) Try the (frozen, sometimes unreliable) concepts search index.
-        data = self._get("/concepts", {"search": topic, "per_page": 10})
+        data = self._get("/concepts", {"search": topic, "per_page": 15})
         results = data.get("results", [])
-        topic_terms = {t for t in _tokenize(topic)}
-        scored = []
+        topic_terms = _tokenize(topic)
+        scored: list[tuple[int, int, int, dict]] = []
         for c in results:
-            terms = _tokenize(c["display_name"])
+            name = c.get("display_name", "")
+            level = c.get("level", 0)
+            if _is_generic_source(name, level):
+                continue
+            terms = _tokenize(name)
             overlap = len(topic_terms & terms)
-            scored.append((overlap, c.get("level", 0) >= 2, c.get("works_count", 0), c))
+            if topic_terms and overlap == 0:
+                continue
+            scored.append((overlap, level, c.get("works_count", 0), c))
         scored.sort(key=lambda t: (t[0], t[1], t[2]), reverse=True)
-        if scored and scored[0][0] > 0:
-            top = scored[0][3]
-            return Concept(
-                id=top["id"],
-                name=top["display_name"],
-                level=top.get("level", 0),
-                works_count=top.get("works_count", 0),
-                score=float(top.get("relevance_score") or 0.0),
-            )
+        if scored:
+            return _concept_from_openalex(scored[0][3])
 
         # 2) Fallback: OpenAlex froze Concepts and the search index misses many
         # entities. Derive A from the concepts that dominate a works search.
@@ -163,8 +180,12 @@ class OpenAlexSource:
         best = None
         for g in groups:
             name = g.get("key_display_name", "")
+            if not name or name.strip().lower() in GENERIC_STOPLIST:
+                continue
             terms = _tokenize(name)
             overlap = len(topic_terms & terms)
+            if topic_terms and overlap == 0:
+                continue
             key = (overlap, g.get("count", 0))
             if best is None or key > best[0]:
                 best = (key, g)
@@ -177,6 +198,8 @@ class OpenAlexSource:
         if info:
             concept.level = info["level"]
             concept.works_count = info["works_count"]
+        if _is_generic_source(concept.name, concept.level):
+            return None
         return concept
 
     def cooccurring_concepts(self, concept: Concept, limit: int = 200) -> list[Concept]:
