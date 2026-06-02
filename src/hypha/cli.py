@@ -34,7 +34,11 @@ def _print_report(report: DiscoveryReport) -> None:
 
     for i, h in enumerate(report.hypotheses, 1):
         link = h.bridge
-        print(f"\n[{i}] {h.statement}")
+        verdict = ""
+        if h.verdict != "unverified":
+            vn = f"{h.verified_novelty:.2f}" if h.verified_novelty is not None else "?"
+            verdict = f"  [verdict={h.verdict.upper()} · verified novelty={vn}]"
+        print(f"\n[{i}] {h.statement}{verdict}")
         print(f"    target (C)   : {link.target.name}")
         print(f"    bridges (B)  : {', '.join(b.name for b in link.bridges)}")
         print(
@@ -42,8 +46,16 @@ def _print_report(report: DiscoveryReport) -> None:
             f"plausibility={h.plausibility_score:.3f}  "
             f"(bridges={link.bridge_support}, direct co-mentions={link.direct_cooccurrence})"
         )
+        if h.verification_note:
+            print(f"    verification : {h.verification_note}")
         print(f"    mechanism    : {h.mechanism}")
         print(f"    experiment   : {h.experiment}")
+        if h.evidence:
+            print("    evidence found:")
+            for ev in h.evidence:
+                yr = f" ({ev.year})" if ev.year else ""
+                loc = f"  {ev.url}" if ev.url else ""
+                print(f"        - [{ev.source}] {ev.title}{yr}{loc}")
         if h.supporting_works:
             print("    evidence     :")
             for w in h.supporting_works:
@@ -64,6 +76,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
         offline=args.offline,
         max_hypotheses=args.max,
         prefer_llm=not args.no_llm,
+        verify=args.verify,
+        evidence=None if args.evidence == "auto" else args.evidence,
     )
     if args.json:
         print(json.dumps(report.model_dump(), indent=2))
@@ -88,6 +102,13 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--offline", action="store_true", help="Use the bundled offline fixture (no network).")
     d.add_argument("--no-llm", action="store_true", help="Force the deterministic reasoner even if an API key is set.")
     d.add_argument("--max", type=int, default=8, help="Maximum number of hypotheses to return.")
+    d.add_argument("--verify", action="store_true", help="Verify each link against the literature and re-rank by verified novelty.")
+    d.add_argument(
+        "--evidence",
+        choices=["auto", "openalex", "parallel", "paperclip"],
+        default="auto",
+        help="Evidence provider for --verify (auto picks the best available).",
+    )
     d.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     d.set_defaults(func=cmd_discover)
 

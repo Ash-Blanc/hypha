@@ -62,7 +62,44 @@ Given a topic **A**, Hypha:
 5. **Ranks** A–C links by bridge support × path strength × novelty × specificity.
 6. **Reasons** each top link into a hypothesis (statement + mechanism +
    experiment) and **self-critiques** confidence.
-7. Returns a fully **traced, cited** report.
+7. **Verifies (optional, `--verify`):** independently checks each proposed link
+   against the real literature/web and assigns a **verdict** — see below.
+8. Returns a fully **traced, cited** report.
+
+## Verification: propose, then check
+
+Concept co-occurrence is a great *idea generator* but a noisy *novelty judge*.
+So Hypha separates the two. After the engine proposes links, an independent
+**evidence provider** searches for the A–C pair and asks how much the literature
+*already* says about it:
+
+| Verdict | Meaning | Effect |
+| --- | --- | --- |
+| **open** | ~no direct co-mention | genuinely undiscovered → boosted |
+| **emerging** | a handful of papers | early signal worth pursuing |
+| **established** | widely co-studied | not novel → demoted / flagged |
+
+Hypha then **re-ranks by verified novelty**, so already-known links sink and the
+real leads rise. Example (live):
+
+> `hypha discover "type 2 diabetes" --verify` flags **diabetes ↔ breast cancer**
+> as `ESTABLISHED` (4,846 direct co-mentions) — correctly catching a link the
+> structural score alone would have presented as novel. Meanwhile
+> `hypha discover "Raynaud disease" --verify` surfaces **Raynaud ↔ COVID-19** as
+> `EMERGING` (7 co-mentions) and ranks it above the established autoimmune links.
+
+Evidence providers are **pluggable / bring-your-own-key**:
+
+- **OpenAlex** *(default, free, no key)* — strict title/abstract AND co-mention
+  count + top cited papers.
+- **[Parallel](https://parallel.ai) Search API** (`PARALLEL_API_KEY`) —
+  web-scale, LLM-optimized evidence excerpts.
+- **[GXL Paperclip](https://paperclip.gxl.ai)** (`PAPERCLIP_API_KEY` +
+  `pip install gxl_paperclip`) — 11M+ full-text papers, 1M+ clinical trials, and
+  FDA/EMA/PMDA regulatory documents. *(experimental)*
+
+Priority when multiple are configured: **Paperclip → Parallel → OpenAlex**
+(override with `--evidence`).
 
 ---
 
@@ -80,7 +117,11 @@ hypha discover "Migraine" --offline
 hypha discover "type 2 diabetes"
 hypha discover "Alzheimer disease" --json
 
-# Web UI + JSON API:
+# Propose AND verify each link against the literature, then re-rank:
+hypha discover "Raynaud disease" --verify
+hypha discover "type 2 diabetes" --verify --evidence parallel   # needs PARALLEL_API_KEY
+
+# Web UI + JSON API (tick "verify vs. literature" in the UI):
 hypha serve            # → http://127.0.0.1:8000
 ```
 
@@ -91,13 +132,18 @@ templates a grounded hypothesis from the bridge evidence. Set any one of these
 to get richer, model-written mechanisms and experiments:
 
 ```bash
+# Hypothesis writing (optional):
 export OPENAI_API_KEY=...        # or ANTHROPIC_API_KEY / GEMINI_API_KEY /
                                  #    OPENROUTER_API_KEY / GROQ_API_KEY
 export HYPHA_MODEL=gpt-4o-mini   # optional model override
+
+# Verification evidence providers (optional; OpenAlex is the free default):
+export PARALLEL_API_KEY=...      # parallel.ai Search API
+export PAPERCLIP_API_KEY=...     # gxl.ai Paperclip (also: pip install gxl_paperclip)
 ```
 
-The provider is auto-detected; if a call fails, Hypha degrades gracefully back
-to the offline reasoner.
+Everything is auto-detected; if any call fails, Hypha degrades gracefully back
+to the free defaults (offline reasoner / OpenAlex evidence).
 
 ---
 
@@ -133,8 +179,9 @@ recovered purely from co-occurrence structure.
 | --- | --- |
 | `hypha/sources/` | Pluggable scholarly backends (`OpenAlexSource`, offline `FixtureSource`). Swap in PubMed/Semantic Scholar by implementing `ScholarSource`. |
 | `hypha/discovery.py` | The ABC engine: bridge finding, candidate expansion, lift-based novelty, IDF specificity, generic/homonym filters. |
+| `hypha/evidence.py` | Verification layer: `EvidenceProvider`s (OpenAlex / Parallel / Paperclip / fixture) + `Verifier` (verdict + re-rank). |
 | `hypha/reasoning.py` | Turns a `BridgeLink` into a `Hypothesis`. LLM (BYOK) or deterministic fallback. |
-| `hypha/agent.py` | Orchestration, citation gathering, self-critique, transparent trace. |
+| `hypha/agent.py` | Orchestration, citation gathering, self-critique, verification, transparent trace. |
 | `hypha/api.py` + `hypha/web/` | FastAPI backend and a single-page UI. |
 | `hypha/cli.py` | `hypha discover` / `hypha serve`. |
 
@@ -160,10 +207,11 @@ For a candidate link A→C reached through bridges B:
   ranks **fish oil** #1 for *Raynaud disease* and surfaces **magnesium** for
   *migraine* (`tests/test_discovery.py`).
 - **Live** OpenAlex runs recover known cross-domain links (e.g. diabetes ↔
-  breast cancer via metformin).
+  breast cancer via metformin), and `--verify` correctly labels them
+  `established` rather than novel.
 
 ```bash
-pytest -q          # 13 tests, fully offline
+pytest -q          # 21 tests, fully offline
 ```
 
 ---
@@ -183,12 +231,16 @@ favor of Topics. Consequences we handle but don't fully solve:
 1. **Typed entities** — swap OpenAlex concepts for PubMed/MeSH + UMLS semantic
    types so C can be constrained (e.g. *disease → drug* for repurposing). This
    is the single biggest precision unlock.
-2. **Embedding-based bridge diversity** — reward links supported by
+2. **Deeper verification** — promote Paperclip full-text + clinical-trial +
+   FDA signals into the verdict (e.g. "0 papers but 2 active trials"), and add
+   an LLM `supported / untested / refuted` read over the retrieved evidence.
+   *(Verification scaffolding shipped: OpenAlex/Parallel/Paperclip providers.)*
+3. **Embedding-based bridge diversity** — reward links supported by
    *semantically diverse* bridges, not synonym clusters.
-3. **Closed discovery** — given A *and* C, explain *why* (find the B path).
-4. **Time-sliced back-testing** — train on literature up to year *Y*, measure
+4. **Closed discovery** — given A *and* C, explain *why* (find the B path).
+5. **Time-sliced back-testing** — train on literature up to year *Y*, measure
    how many ranked links became real co-publications after *Y* (a real metric).
-5. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
+6. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
    trials.
 
 ---

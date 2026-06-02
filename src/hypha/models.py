@@ -63,6 +63,17 @@ class BridgeLink(BaseModel):
         )
 
 
+class EvidenceItem(BaseModel):
+    """A real document found while verifying a hypothesis against the literature."""
+
+    title: str
+    url: Optional[str] = None
+    snippet: str = ""
+    source: str = ""
+    year: Optional[int] = None
+    kind: str = "paper"  # paper | trial | regulatory | web
+
+
 class Hypothesis(BaseModel):
     """A natural-language, testable hypothesis built from a bridge link."""
 
@@ -75,6 +86,15 @@ class Hypothesis(BaseModel):
     bridge: BridgeLink
     supporting_works: list[SupportingWork] = Field(default_factory=list)
     generated_by: str = "fallback"
+
+    # --- verification (populated when an evidence provider checks the link) ---
+    verdict: str = "unverified"  # unverified | open | emerging | established
+    verified_novelty: Optional[float] = None
+    verification_note: str = ""
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+
+    def ranking_novelty(self) -> float:
+        return self.verified_novelty if self.verified_novelty is not None else self.novelty_score
 
 
 class TraceEvent(BaseModel):

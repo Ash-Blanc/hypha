@@ -252,5 +252,40 @@ class OpenAlexSource:
             )
         return works
 
+    # --------------------------------------------------------- verification
+    @staticmethod
+    def _clean(term: str) -> str:
+        # Commas and colons are structural in OpenAlex filter syntax.
+        return re.sub(r"[,:]", " ", term).strip()
+
+    def comention_count(self, a_name: str, c_name: str) -> int:
+        """Works whose title/abstract mention *both* terms (strict AND).
+
+        This is an independent novelty signal from the concept co-occurrence the
+        engine uses to *propose* a link, so it is a meaningful cross-check.
+        """
+        flt = (
+            f"title_and_abstract.search:{self._clean(a_name)},"
+            f"title_and_abstract.search:{self._clean(c_name)}"
+        )
+        data = self._get("/works", {"filter": flt, "per_page": 1})
+        return int(data.get("meta", {}).get("count", 0))
+
+    def comention_works(self, a_name: str, c_name: str, limit: int = 4) -> list[dict]:
+        flt = (
+            f"title_and_abstract.search:{self._clean(a_name)},"
+            f"title_and_abstract.search:{self._clean(c_name)}"
+        )
+        data = self._get(
+            "/works",
+            {
+                "filter": flt,
+                "per_page": limit,
+                "sort": "cited_by_count:desc",
+                "select": "id,title,publication_year,doi,abstract_inverted_index",
+            },
+        )
+        return data.get("results", [])
+
     def close(self) -> None:
         self._client.close()

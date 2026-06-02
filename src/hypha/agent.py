@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from hypha.discovery import DiscoveryConfig, discover_links
+from hypha.evidence import EvidenceProvider, Verifier
 from hypha.models import DiscoveryReport, Hypothesis, TraceEvent
 from hypha.reasoning import FallbackReasoner, get_reasoner
 from hypha.sources.base import ScholarSource
@@ -28,12 +29,19 @@ class DiscoveryAgent:
         reasoner: object | None = None,
         config: Optional[DiscoveryConfig] = None,
         prefer_llm: bool = True,
+        evidence_provider: Optional[EvidenceProvider] = None,
     ) -> None:
         self.source = source or OpenAlexSource()
         self.reasoner = reasoner or get_reasoner(prefer_llm=prefer_llm)
         self.config = config or DiscoveryConfig()
+        self.evidence_provider = evidence_provider
 
-    def discover(self, topic: str, max_hypotheses: Optional[int] = None) -> DiscoveryReport:
+    def discover(
+        self,
+        topic: str,
+        max_hypotheses: Optional[int] = None,
+        verify: bool = False,
+    ) -> DiscoveryReport:
         cfg = self.config
         if max_hypotheses is not None:
             cfg = DiscoveryConfig(**{**cfg.__dict__, "max_results": max_hypotheses})
@@ -60,14 +68,45 @@ class DiscoveryAgent:
             hyp = self._critique(hyp)
             hypotheses.append(hyp)
 
-        report.hypotheses = hypotheses
         report.trace.append(
             TraceEvent(
                 step="hypothesize",
                 detail=f"Drafted {len(hypotheses)} hypotheses via reasoner '{report.reasoner}'.",
             )
         )
+
+        if verify and self.evidence_provider is not None:
+            hypotheses = self._verify(hypotheses, report)
+
+        report.hypotheses = hypotheses
         return report
+
+    def _verify(self, hypotheses: list[Hypothesis], report: DiscoveryReport) -> list[Hypothesis]:
+        verifier = Verifier(self.evidence_provider)
+        for hyp in hypotheses:
+            verifier.verify(hyp)
+        # Re-rank: prioritise verified novelty x plausibility, pushing
+        # already-"established" links down even if their structural score was high.
+        hypotheses.sort(
+            key=lambda h: h.ranking_novelty() * max(h.plausibility_score, 0.05),
+            reverse=True,
+        )
+        counts: dict[str, int] = {}
+        for h in hypotheses:
+            counts[h.verdict] = counts.get(h.verdict, 0) + 1
+        report.reasoner = report.reasoner
+        report.stats = {**report.stats, "verdicts": counts}
+        report.trace.append(
+            TraceEvent(
+                step="verify",
+                detail=(
+                    f"Verified {len(hypotheses)} links via "
+                    f"'{getattr(self.evidence_provider, 'name', 'evidence')}' and re-ranked "
+                    f"by verified novelty. Verdicts: {counts}."
+                ),
+            )
+        )
+        return hypotheses
 
     # ------------------------------------------------------------------
     def _citations(self, link) -> list:
@@ -109,8 +148,12 @@ def run_discovery(
     offline: bool = False,
     max_hypotheses: int = 8,
     prefer_llm: bool = True,
+    verify: bool = False,
+    evidence: Optional[str] = None,
 ) -> DiscoveryReport:
     """Convenience entry point used by the CLI and API."""
+    from hypha.evidence import get_evidence_provider
+
     if offline:
         from hypha.sources.fixture import FixtureSource
 
@@ -118,7 +161,16 @@ def run_discovery(
             source=FixtureSource(),
             reasoner=FallbackReasoner(),
             prefer_llm=False,
+            evidence_provider=get_evidence_provider(offline=True) if verify else None,
         )
     else:
-        agent = DiscoveryAgent(prefer_llm=prefer_llm)
-    return agent.discover(topic, max_hypotheses=max_hypotheses)
+        source = OpenAlexSource()
+        provider = (
+            get_evidence_provider(offline=False, source=source, prefer=evidence)
+            if verify
+            else None
+        )
+        agent = DiscoveryAgent(
+            source=source, prefer_llm=prefer_llm, evidence_provider=provider
+        )
+    return agent.discover(topic, max_hypotheses=max_hypotheses, verify=verify)
