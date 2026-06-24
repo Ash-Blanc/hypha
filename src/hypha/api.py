@@ -31,6 +31,10 @@ class DiscoverRequest(BaseModel):
     verify: bool = False
     evidence: Optional[str] = None
     target: Optional[str] = None
+    # New in revamp: generalizability + novelty controls (optional, additive)
+    novelty_mode: Optional[str] = None  # concept_lift | comention | hybrid
+    filter_profile: Optional[str] = None  # biomed | general
+    bridge_diversity_weight: Optional[float] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -57,6 +61,9 @@ def discover(req: DiscoverRequest) -> JSONResponse:
         verify=req.verify,
         evidence=None if req.evidence in (None, "auto") else req.evidence,
         target=None if req.target in (None, "any") else req.target,
+        novelty_mode=req.novelty_mode or "concept_lift",
+        filter_profile=req.filter_profile or "biomed",
+        bridge_diversity_weight=req.bridge_diversity_weight or 0.0,
     )
     return JSONResponse(report.model_dump())
 

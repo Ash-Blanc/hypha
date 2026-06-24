@@ -29,7 +29,10 @@ dependencies = [
 hypha = "hypha.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "httpx2>=2.4.0",
+    "pytest>=8",
+]
 
 [tool.uv]
 package = true

@@ -70,6 +70,19 @@ class FixtureSource:
     def cooccurrence_count(self, a: Concept, c: Concept) -> int:
         return self._edges.get((a.short_id(), c.short_id()), 0)
 
+    def comention_count(self, a_name: str, c_name: str) -> int:
+        """For the offline fixture we treat the synthetic co-occurrence count
+        as a proxy for "direct" mentions. This lets novelty_mode=hybrid/comention
+        and back-test-style logic run deterministically without network, while
+        the canonical Raynaud/Migraine fixture tests continue to pass under
+        default (concept_lift) mode.
+        """
+        a = self.resolve_concept(a_name)
+        c = self.resolve_concept(c_name)
+        if a is None or c is None:
+            return 0
+        return self.cooccurrence_count(a, c)
+
     def representative_works(
         self, concepts: list[Concept], limit: int = 2
     ) -> list[SupportingWork]:

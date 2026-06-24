@@ -253,11 +253,15 @@ For a candidate link A→C reached through bridges B:
 
 - **bridge support** = number of independent B's connecting A and C.
 - **path strength** = Σ over bridges of `√(assoc(A,B) · assoc(B,C))`.
-- **novelty** via **lift**: `lift = direct(A,C) / expected(A,C)` where
-  `expected = works(A)·works(C)/N`. A pair with `lift ≤ 2` (co-occurs no more
-  than ~2× chance) is treated as novel; `novelty = 1/(1+lift)`.
-- **specificity** (IDF): `1/(1+log10(works(C)))` downweights ubiquitous concepts.
-- **score** = `(0.6·pathⁿᵒʳᵐ + 0.4·support) · novelty · specificity`.
+- **novelty** (configurable):
+  - Classic (default `concept_lift`): `lift = direct_concept_cooc(A,C) / expected`; `novelty = 1/(1+lift)`.
+  - `comention`: uses independent title/abstract (or full-text) direct co-mention count from the source (when available via `comention_count`).
+  - `hybrid`: blends lift + comention (recommended for mature topics).
+- **specificity** (IDF): `1/(1+log10(works(C)))` (or 1.0 when counts unknown).
+- Optional **bridge diversity** (opt-in via `--bridge-diversity` or config): lightweight token-Jaccard across B's rewards links supported by semantically distinct intermediates.
+- **score** = structural × novelty × specificity × (1 + diversity_weight × diversity).
+
+The engine now treats comention as a first-class proposal-time signal (not only for post-hoc `--verify` re-ranking), directly addressing the historical precision gap on heavily-studied fields. Verification + re-rank by `verified_novelty` remains the final quality layer.
 
 ---
 
@@ -311,20 +315,27 @@ MeSH-typed targets (`--target drug`) for repurposing; closed discovery
 
 **Roadmap (in priority order):**
 
-1. **Comention-native novelty** — make the engine rank by the independent
-   title/abstract co-mention signal (used by `--verify`/back-test), not just
-   concept-pair lift, so genuinely-novel links surface in the top-k. (The
-   back-test shows this is the key precision lever.)
-2. **Sharper drug typing** — restrict `--target drug` to MeSH pharmacologic
+1. **Comention-native novelty** — ✅ substantially shipped in the revamp:
+   `novelty_mode=hybrid|comention`, pluggable `NoveltyScorer`s, comention signals
+   used at proposal/ranking time (when the `ScholarSource` provides
+   `comention_count`), blended scoring, and `signals` / `comention_count` /
+   `diversity` on `BridgeLink`. Classic `concept_lift` remains the default for
+   exact backward compat + fixture repro. Back-test already used this signal for
+   honesty; now the live engine can too.
+2. **Configurable filters & general profiles** — ✅ shipped: `filter_profile=biomed|general`,
+   `RelevanceFilter` with overrides, `extra_*_stop` lists. Makes non-biomed /
+   emerging-field use far more practical.
+3. **Bridge diversity** — ✅ lightweight token-Jaccard version shipped
+   (opt-in via `bridge_diversity_weight`); full embedding version remains future.
+4. **Sharper drug typing** — restrict `--target drug` to MeSH pharmacologic
    subtrees / "PA" actions (exclude biopolymers like RNA), and add UMLS
    semantic types for finer control.
-3. **Deeper verification** — promote Paperclip full-text + clinical-trial +
-   FDA signals into the verdict (e.g. "0 papers but 2 active trials"), and add
-   an LLM `supported / untested / refuted` read over the retrieved evidence.
-4. **Embedding-based bridge diversity** — reward links supported by
-   *semantically diverse* bridges, not synonym clusters.
-5. **Multi-source fusion** — OpenAlex + Semantic Scholar + patents + clinical
-   trials (Paperclip already unlocks much of this).
+5. **Deeper verification + multi-source** — promote Paperclip full-text +
+   clinical-trial + FDA signals into the verdict, LLM `supported/untested/refuted`
+   read, and easier fusion of OpenAlex + S2 + patents etc.
+6. **Generator unification** — make Paperclip-style phrase mining, vector
+   analogy, etc. first-class peers to ABC so a single run can fuse multiple
+   proposal strategies.
 
 ---
 

@@ -12,7 +12,7 @@ human can follow and check the reasoning chain).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from hypha.discovery import DiscoveryConfig, discover_links, explain_link
 from hypha.evidence import EvidenceProvider, Verifier
@@ -182,13 +182,33 @@ def run_discovery(
     verify: bool = False,
     evidence: Optional[str] = None,
     target: Optional[str] = None,
+    # Generalizability & novelty (forwarded to DiscoveryConfig; safe defaults)
+    novelty_mode: str = "concept_lift",
+    filter_profile: str = "biomed",
+    bridge_diversity_weight: float = 0.0,
+    embedder: Any = None,
 ) -> DiscoveryReport:
     """Convenience entry point used by the CLI and API."""
     from hypha.evidence import get_evidence_provider
+    from hypha.filters import make_openai_embedder
     from hypha.mesh import resolve_target
 
     target_categories = resolve_target(target)
-    config = DiscoveryConfig(target_categories=target_categories)
+    # Auto-detect embedder (for semantic filter + vector bridge diversity) the
+    # same way we auto-detect LLM providers, unless the caller supplied one.
+    _embedder = embedder
+    if _embedder is None:
+        # "auto" (the common case from CLI without --no-semantic)
+        _embedder = make_openai_embedder()
+    elif _embedder is False:
+        _embedder = None  # explicit disable
+    config = DiscoveryConfig(
+        target_categories=target_categories,
+        novelty_mode=novelty_mode,
+        filter_profile=filter_profile,
+        bridge_diversity_weight=bridge_diversity_weight,
+        embedder=_embedder,
+    )
 
     if offline:
         from hypha.sources.fixture import FixtureSource
@@ -230,17 +250,36 @@ def run_explain(
     prefer_llm: bool = True,
     verify: bool = False,
     evidence: Optional[str] = None,
+    # forwarded (explain uses a subset of the richer config)
+    novelty_mode: str = "concept_lift",
+    filter_profile: str = "biomed",
+    bridge_diversity_weight: float = 0.0,
+    embedder: Any = None,
 ) -> DiscoveryReport:
     """Closed-discovery entry point used by the CLI and API."""
     from hypha.evidence import get_evidence_provider
+    from hypha.filters import make_openai_embedder
+
+    _embedder = embedder
+    if _embedder is None:
+        _embedder = make_openai_embedder()
+    elif _embedder is False:
+        _embedder = None
 
     if offline:
         from hypha.sources.fixture import FixtureSource
 
+        cfg = DiscoveryConfig(
+            novelty_mode=novelty_mode,
+            filter_profile=filter_profile,
+            bridge_diversity_weight=bridge_diversity_weight,
+            embedder=_embedder,
+        )
         agent = DiscoveryAgent(
             source=FixtureSource(),
             reasoner=FallbackReasoner(),
             prefer_llm=False,
+            config=cfg,
             evidence_provider=get_evidence_provider(offline=True) if verify else None,
         )
     else:
@@ -250,7 +289,13 @@ def run_explain(
             if verify
             else None
         )
+        cfg = DiscoveryConfig(
+            novelty_mode=novelty_mode,
+            filter_profile=filter_profile,
+            bridge_diversity_weight=bridge_diversity_weight,
+            embedder=_embedder,
+        )
         agent = DiscoveryAgent(
-            source=source, prefer_llm=prefer_llm, evidence_provider=provider
+            source=source, prefer_llm=prefer_llm, config=cfg, evidence_provider=provider
         )
     return agent.explain(a_topic, c_topic, verify=verify)
