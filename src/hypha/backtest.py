@@ -103,6 +103,9 @@ def backtest(
     # so "novel as of Y" and "emerged after Y" are measured on equal footing.
     pool = max(k * 8, 80)
     base = config or DiscoveryConfig()
+    # Preserve any richer novelty/filter settings the caller passed; force a deep
+    # candidate pool and disable the classic lift gate (back-test judges novelty
+    # via comention/emergence for honesty, as before).
     cfg = DiscoveryConfig(
         **{
             **base.__dict__,

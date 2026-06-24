@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from hypha.discovery import _bad_parenthetical, _is_generic
+from hypha.filters import _bad_parenthetical, _is_generic
 from hypha.models import BridgeLink, Concept, EvidenceItem, SupportingWork
 from hypha.paperclip_client import PaperclipClient, parse_papers
 

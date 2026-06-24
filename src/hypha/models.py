@@ -54,11 +54,21 @@ class BridgeLink(BaseModel):
     novelty: float = 0.0
     score: float = 0.0
 
+    # --- Richer novelty / generalizability signals (additive, default compat) ---
+    comention_count: int = 0  # direct title/abstract (or richer) co-mentions when known
+    diversity: float = 1.0  # bridge set diversity (1.0 = fully diverse by token sets)
+    signals: dict[str, float] = Field(default_factory=dict)  # e.g. {"lift": 0.82, "comention": 0.95, "bridge_diversity": 0.71}
+
     def explain(self) -> str:
         names = ", ".join(b.name for b in self.bridges[:5])
+        extra = ""
+        if self.comention_count:
+            extra = f", comention={self.comention_count}"
+        if self.diversity < 0.95:
+            extra += f", div={self.diversity:.2f}"
         return (
             f"{self.source.name} -> [{names}] -> {self.target.name} "
-            f"(bridges={self.bridge_support}, direct={self.direct_cooccurrence}, "
+            f"(bridges={self.bridge_support}, direct={self.direct_cooccurrence}{extra}, "
             f"score={self.score:.3f})"
         )
 

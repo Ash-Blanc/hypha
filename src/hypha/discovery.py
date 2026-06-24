@@ -16,174 +16,24 @@ knowledge" - a connection implied by the literature but not yet stated in it.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
+from typing import Optional
 
+from hypha.filters import (
+    RelevanceFilter,
+    _bad_parenthetical,
+    _distinctive_tokens,
+    _is_generic,
+    make_default_filter,
+)
 from hypha.models import BridgeLink, Concept, TraceEvent
+from hypha.novelty import (
+    attach_diversity,
+    blend_novelty,
+    compute_bridge_diversity,
+    compute_novelty_for_link,
+)
 from hypha.sources.base import ScholarSource
-
-# Vague umbrella concepts that are technically mid-level in OpenAlex but carry
-# no discovery value as bridges or targets.
-NAME_STOPLIST = {
-    "disease",
-    "syndrome",
-    "disorder",
-    "phenomenon",
-    "context",
-    "context (archaeology)",
-    "systemic disease",
-    "pathology",
-    "etiology",
-    "pathogenesis",
-    "clinical significance",
-    "prevalence",
-    "incidence (epidemiology)",
-    "comorbidity",
-    "quality of life",
-    "mortality",
-    "prognosis",
-    "epidemiology",
-    "complication",
-    "differential diagnosis",
-    "intensive care medicine",
-    "physical therapy",
-    "in patient",
-    "population",
-    "young adult",
-    "gerontology",
-    "environmental health",
-    # Ubiquitous methodology / measurement / omics terms that co-occur with
-    # almost everything and carry no discovery value as a target or bridge.
-    "gene expression",
-    "in vitro",
-    "in vivo",
-    "in silico",
-    "biomarker",
-    "antigen",
-    "antibody",
-    "cytokine",
-    "phenotype",
-    "genotype",
-    "messenger rna",
-    "complementary dna",
-    "peptide sequence",
-    "amino acid",
-    "cell",
-    "cell culture",
-    "cell biology",
-    "computational biology",
-    "bioinformatics",
-    "immune system",
-    "receptor",
-    "enzyme",
-    "protein",
-    "gene",
-    "transcription factor",
-    "cell growth",
-    "intracellular",
-    "cohort",
-    "clinical trial",
-    "randomized controlled trial",
-    "placebo",
-    "meta analysis",
-    "systematic review",
-    "odds ratio",
-    "confidence interval",
-    "logistic regression",
-    "retrospective cohort study",
-    "case control study",
-    "multivariate analysis",
-    "regression analysis",
-    "machine learning",
-    "deep learning",
-    "artificial intelligence",
-    "algorithm",
-    "function (biology)",
-    "test (biology)",
-    "perception",
-    "mental health",
-    "rehabilitation",
-    "public health",
-    "nursing",
-    "well-being",
-    "attention",
-    "behavior",
-    "stress (mechanics)",
-}
-
-# Parenthetical sense tags that indicate an out-of-domain homonym in OpenAlex's
-# (frozen) concept set - e.g. "Scleroderma (fungus)" or "Amyloid (mycology)" in
-# a biomedical query. Such concepts are almost always noise.
-HOMONYM_TAGS = {
-    "mycology",
-    "fungus",
-    "archaeology",
-    "geology",
-    "programming language",
-    "album",
-    "band",
-    "software",
-    "journal",
-    "given name",
-    "surname",
-    "plant",
-    "insect",
-    "moth",
-    "genus",
-    "color",
-    "mathematics",
-    "geometry",
-    "opera",
-    "film",
-    "novel",
-    "tv series",
-    "magazine",
-    "company",
-    "river",
-    "city",
-}
-
-
-def _bad_parenthetical(name: str) -> bool:
-    m = re.search(r"\(([^)]+)\)", name)
-    return bool(m and m.group(1).strip().lower() in HOMONYM_TAGS)
-
-# Tokens stripped when computing a concept's "distinctive" terms (used to drop
-# near-synonyms of the source concept A).
-GENERIC_TOKENS = {
-    "disease",
-    "diseases",
-    "syndrome",
-    "disorder",
-    "disorders",
-    "the",
-    "of",
-    "and",
-    "in",
-    "a",
-    "an",
-    "s",
-    "phenomenon",
-    "primary",
-    "secondary",
-    "acute",
-    "chronic",
-}
-
-
-def _tokens(name: str) -> set[str]:
-    return {t for t in re.split(r"[^a-z0-9]+", name.lower()) if t}
-
-
-def _distinctive_tokens(name: str) -> set[str]:
-    return _tokens(name) - GENERIC_TOKENS
-
-
-def _is_generic(name: str) -> bool:
-    n = name.strip().lower()
-    if n in NAME_STOPLIST:
-        return True
-    return bool(_distinctive_tokens(name)) is False
 
 
 @dataclass
@@ -204,6 +54,39 @@ class DiscoveryConfig:
     corpus_size: int = 250_000_000
     bridge_pool: int = 200
 
+    # --- Generalizability & novelty upgrades (additive, defaults = v0 behavior) ---
+    # Filter profile or explicit instance. "biomed" reproduces historical lists
+    # exactly. "general" uses a much smaller stop set for non-biomed domains.
+    filter_profile: str = "biomed"
+    filters: Optional[RelevanceFilter] = None
+
+    # Embedder for semantic (vector) filtering + diversity.
+    # When present, RelevanceFilter uses cosine-to-prototypes for is_generic /
+    # A-similarity instead of (or in addition to) giant static lists, and
+    # compute_bridge_diversity uses real embedding distances.
+    # Create with filters.make_openai_embedder() or your own Callable[[list[str]], list[list[float]]].
+    # This is the main lever for *far less hardcoding* of stoplists.
+    embedder: Any = None
+
+    # How to compute/weight novelty for ranking (used in proposal stage).
+    # "concept_lift": original behavior (concept cooc lift only).
+    # "comention": prefer title/abstract (or fulltext) comention count when the
+    #             source provides comention_count(a.name, c.name).
+    # "hybrid": blend lift + comention signals (recommended for most real topics).
+    novelty_mode: str = "concept_lift"  # "concept_lift" | "comention" | "hybrid"
+    # Relative weights for a simple linear blend when mode="hybrid".
+    novelty_weights: dict[str, float] = field(
+        default_factory=lambda: {"lift": 0.55, "comention": 0.45}
+    )
+    # If > 0, reward A-C links whose supporting bridges are semantically diverse.
+    # When embedder is present this uses vector cosine (much stronger than token Jaccard).
+    bridge_diversity_weight: float = 0.0
+    # Scale used when turning a raw comention count into a novelty-ish score in
+    # comention/hybrid modes (higher count => lower novelty; mirrors Verifier logic).
+    comention_novelty_scale: float = 30.0
+    # Minimum number of bridges required before a link can be emitted (quality gate).
+    min_bridge_support: int = 1
+
 
 @dataclass
 class _Candidate:
@@ -219,6 +102,20 @@ def _normalize(values: dict[str, float]) -> dict[str, float]:
     if hi <= 0:
         return {k: 0.0 for k in values}
     return {k: v / hi for k, v in values.items()}
+
+
+def _get_filter(cfg: DiscoveryConfig) -> RelevanceFilter:
+    """Return a RelevanceFilter instance for this config (cached construction)."""
+    if cfg.filters is not None:
+        # If caller gave an explicit filter but we also have a top-level embedder,
+        # make sure the filter sees it (unless it already has one).
+        if getattr(cfg, "embedder", None) and not getattr(cfg.filters, "embedder", None):
+            cfg.filters.embedder = cfg.embedder
+        return cfg.filters
+    flt = make_default_filter(cfg.filter_profile or "biomed")
+    if getattr(cfg, "embedder", None):
+        flt.embedder = cfg.embedder
+    return flt
 
 
 def _ensure_levels(source: ScholarSource, concepts: list[Concept]) -> None:
@@ -267,18 +164,15 @@ def discover_links(
     a_cooc_score = {c.short_id(): c.score for c in a_cooc}
     a_norm = _normalize(a_cooc_score)
 
+    flt = _get_filter(cfg)
     # Distinctive tokens of A let us drop its own near-synonyms (e.g. the
     # source "Raynaud disease" vs the variant concept "Raynaud's disease").
-    a_terms = _distinctive_tokens(a.name)
+    a_terms = _distinctive_tokens(a.name)  # still used for legacy path; filter also has it
 
     def _usable(c: Concept) -> bool:
-        if c.short_id() == a.short_id() or c.level < cfg.min_level:
-            return False
-        if _is_generic(c.name) or _bad_parenthetical(c.name):
-            return False
-        if a_terms and (_distinctive_tokens(c.name) & a_terms):
-            return False
-        return True
+        # Delegate to the (possibly custom) filter; fall back to legacy min_level
+        # behavior for exact v0 compatibility when using default biomed filter.
+        return flt.is_usable(c, a=a, min_level=cfg.min_level)
 
     usable_bridges = [c for c in a_cooc if _usable(c)]
     # Prefer bridges that are both strongly associated with A and reasonably
@@ -329,7 +223,7 @@ def discover_links(
         return a, [], {"bridges": len(bridges), "candidates": 0}, trace
 
     _ensure_levels(source, [c.concept for c in candidates.values()])
-    filtered = [c for c in candidates.values() if _usable(c.concept)]
+    filtered = [c for c in candidates.values() if _usable(c.concept)]  # re-uses the closure above (flt + a)
 
     # Preliminary ranking before the (costlier) direct-co-occurrence check.
     filtered.sort(key=lambda c: (len(c.bridges), c.path_strength), reverse=True)
@@ -369,39 +263,94 @@ def discover_links(
     short = filtered[: cfg.n_candidates_checked]
 
     # --- Novelty: how rarely do A and C actually appear together? ---------
+    # We always compute the classic lift for the gate + backward compat, but in
+    # "comention" / "hybrid" modes we also pull comention (when the source
+    # supports it) and blend. Bridge diversity (lightweight) is opt-in.
     path_norm = _normalize({c.concept.short_id(): c.path_strength for c in short})
     links: list[BridgeLink] = []
+    comention_available = False
     for cand in short:
         direct = source.cooccurrence_count(a, cand.concept)
         # Expected co-occurrence under independence, and the resulting lift.
-        expected = (a.works_count * cand.concept.works_count) / max(cfg.corpus_size, 1)
+        expected = (getattr(a, "works_count", 0) or 10) * (getattr(cand.concept, "works_count", 0) or 10) / max(
+            getattr(cfg, "corpus_size", 250_000_000), 1
+        )
         lift = direct / max(expected, 0.5)
-        if lift > cfg.max_lift:
-            continue  # already meaningfully co-discussed -> not novel
-        novelty = 1.0 / (1.0 + lift)
+
+        # Mode-aware gate: concept_lift keeps the historical strict filter for
+        # exact v0 behavior on defaults/fixture. Richer modes are more permissive
+        # here and let the blended novelty + verification do the heavy lifting.
+        mode = getattr(cfg, "novelty_mode", "concept_lift")
+        if mode == "concept_lift" and lift > getattr(cfg, "max_lift", 2.0):
+            continue
+
         support = len(cand.bridges) / max(len(bridges), 1)
         p = path_norm.get(cand.concept.short_id(), 0.0)
         spec = _specificity(cand.concept)
-        score = (0.6 * p + 0.4 * support) * novelty * spec
-        links.append(
-            BridgeLink(
-                source=a,
-                target=cand.concept,
-                bridges=sorted(cand.bridges, key=lambda b: a_norm.get(b.short_id(), 0), reverse=True),
-                direct_cooccurrence=direct,
-                bridge_support=len(cand.bridges),
-                path_strength=cand.path_strength,
-                novelty=novelty,
-                score=score,
-            )
+        base_struct = (0.6 * p + 0.4 * support) * spec
+
+        # Classic novelty (always available)
+        classic_novelty = 1.0 / (1.0 + lift)
+
+        # Build the link first with classic values (keeps explain() etc. happy)
+        link = BridgeLink(
+            source=a,
+            target=cand.concept,
+            bridges=sorted(cand.bridges, key=lambda b: a_norm.get(b.short_id(), 0), reverse=True),
+            direct_cooccurrence=direct,
+            bridge_support=len(cand.bridges),
+            path_strength=cand.path_strength,
+            novelty=classic_novelty,
+            score=base_struct * classic_novelty,
         )
+
+        # Richer novelty (comention + blend) when requested and available
+        if mode in ("comention", "hybrid"):
+            try:
+                blended, sigdict, _sigs = compute_novelty_for_link(link, cfg, source=source)
+                # Use blended for scoring in rich modes; keep classic in .novelty for compat
+                link.novelty = blended  # historical field gets the one we actually ranked by
+                link.signals = {**getattr(link, "signals", {}), **sigdict}
+                comention_available = True
+            except Exception:  # noqa: BLE001 - never break discovery on novelty
+                pass
+
+        # Optional bridge diversity (generalizability / quality signal)
+        if getattr(cfg, "bridge_diversity_weight", 0.0) > 0 or mode != "concept_lift":
+            try:
+                emb = getattr(cfg, "embedder", None)
+                div = compute_bridge_diversity(link.bridges, embedder=emb)
+                attach_diversity(link, div)
+                dw = getattr(cfg, "bridge_diversity_weight", 0.0)
+                if dw > 0:
+                    # Gentle multiplicative boost for diverse bridge sets
+                    link.score = link.score * (1.0 + dw * max(0.0, (div - 0.4)))
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Final score (may have been adjusted by rich novelty above)
+        if mode in ("comention", "hybrid"):
+            # Re-apply a structural * novelty blend so very low-support things don't dominate
+            link.score = base_struct * (getattr(link, "novelty", classic_novelty) or classic_novelty)
+        else:
+            link.score = base_struct * classic_novelty
+
+        # Quality gate
+        if getattr(cfg, "min_bridge_support", 1) > 1 and link.bridge_support < cfg.min_bridge_support:
+            continue
+
+        links.append(link)
 
     links.sort(key=lambda link: link.score, reverse=True)
     links = links[: cfg.max_results]
+
+    rank_detail = f"Ranked {len(links)} novel A-C links (mode={getattr(cfg, 'novelty_mode', 'concept_lift')})."
+    if comention_available:
+        rank_detail += " Comention signal was used for ranking."
     trace.append(
         TraceEvent(
             step="rank",
-            detail=f"Ranked {len(links)} novel A-C links after the direct co-occurrence filter.",
+            detail=rank_detail,
             data={"links": [link.explain() for link in links]},
         )
     )
@@ -449,6 +398,7 @@ def explain_link(
     c_norm = _normalize({x.short_id(): x.score for x in c_cooc})
     c_by_id = {x.short_id(): x for x in c_cooc}
 
+    flt = _get_filter(cfg)
     a_terms = _distinctive_tokens(a.name)
     c_terms = _distinctive_tokens(c.name)
 
@@ -457,7 +407,7 @@ def explain_link(
         bid = b.short_id()
         if bid not in c_by_id or bid in (a.short_id(), c.short_id()):
             continue
-        if b.level < cfg.min_level or _is_generic(b.name) or _bad_parenthetical(b.name):
+        if b.level < cfg.min_level or flt.is_generic(b.name) or flt.is_bad_parenthetical(b.name):
             continue
         bt = _distinctive_tokens(b.name)
         if (a_terms and bt & a_terms) or (c_terms and bt & c_terms):

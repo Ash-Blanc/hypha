@@ -79,6 +79,10 @@ def cmd_discover(args: argparse.Namespace) -> int:
         verify=args.verify,
         evidence=None if args.evidence == "auto" else args.evidence,
         target=None if args.target == "any" else args.target,
+        novelty_mode=getattr(args, "novelty_mode", "concept_lift"),
+        filter_profile=getattr(args, "filter_profile", "biomed"),
+        bridge_diversity_weight=getattr(args, "bridge_diversity", 0.0),
+        embedder=False if getattr(args, "no_semantic", False) else None,
     )
     if args.json:
         print(json.dumps(report.model_dump(), indent=2))
@@ -223,6 +227,30 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "openalex", "parallel", "paperclip"],
         default="auto",
         help="Evidence provider for --verify (auto picks the best available).",
+    )
+    # Generalizability & novelty controls (additive; defaults preserve classic behavior)
+    d.add_argument(
+        "--novelty-mode",
+        choices=["concept_lift", "comention", "hybrid"],
+        default="concept_lift",
+        help="Novelty signal for proposal/ranking: concept_lift (classic), comention (title/abstract direct), hybrid (blend).",
+    )
+    d.add_argument(
+        "--filter-profile",
+        choices=["biomed", "general"],
+        default="biomed",
+        help="Relevance filter profile. 'biomed' = historical strict lists (exact for Raynaud etc.). 'general' = smaller stop set for other domains.",
+    )
+    d.add_argument(
+        "--bridge-diversity",
+        type=float,
+        default=0.0,
+        help="Weight (0.0-1.0) for rewarding links with semantically diverse bridges (vector cosine when embedder available, else token). 0 preserves classic ranking.",
+    )
+    d.add_argument(
+        "--no-semantic",
+        action="store_true",
+        help="Disable automatic semantic/vector filtering and diversity even if an embedding API key is present (OPENAI_API_KEY or HYPHA_EMBED_*). Forces pure list/token behavior.",
     )
     d.add_argument("--json", action="store_true", help="Emit the full report as JSON.")
     d.set_defaults(func=cmd_discover)

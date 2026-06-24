@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from hypha.discovery import DiscoveryConfig, _bad_parenthetical, _is_generic, discover_links
+from hypha.discovery import DiscoveryConfig, discover_links
+from hypha.filters import _bad_parenthetical, _is_generic
 from hypha.evidence import Verifier, get_evidence_provider
 from hypha.models import Hypothesis
 from hypha.paperclip_client import PaperclipClient
